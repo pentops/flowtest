@@ -106,10 +106,14 @@ func (ss *Stepper) RunSteps(t TB) {
 		blue("STEP %s\n", step.desc)
 		func() {
 			defer func() {
-				if r := recover(); r != nil && r != earlyTestExit {
+				if r := recover(); r != nil {
+					if r == earlyTestExit {
+						return
+					}
 
-					asserter.Fatalf("Test Step Panic: %s", r)
-					// Stack will be captured by the Fatal call but too deep
+					// Can't use Fatal because that causes a panic loop
+					asserter.log("FATAL", fmt.Sprintf("Test Step Panic: %v", r))
+					asserter.failed = true
 					asserter.failStack = debug.Stack()
 				}
 			}()
@@ -257,7 +261,7 @@ func (t *asserter) FailNow() {
 	panic(earlyTestExit)
 }
 
-var earlyTestExit = struct{}{}
+var earlyTestExit = "EARLY EXIT" //struct{}{}
 
 func (t *asserter) Error(args ...interface{}) {
 	t.t.Helper()
