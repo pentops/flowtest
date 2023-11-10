@@ -114,7 +114,20 @@ func (ss *Stepper) RunSteps(t TB) {
 					// Can't use Fatal because that causes a panic loop
 					asserter.log("FATAL", fmt.Sprintf("Test Step Panic: %v", r))
 					asserter.failed = true
-					asserter.failStack = debug.Stack()
+					fullStack := strings.Split(string(debug.Stack()), "\n")
+					filteredStack := make([]string, 0, len(fullStack))
+					filteredStack = append(filteredStack, fullStack[0])
+					collect := false
+					for _, line := range fullStack[1:] {
+						if collect {
+							filteredStack = append(filteredStack, line)
+						} else if strings.Contains(line, "panic.go") {
+							collect = true
+							continue
+						}
+					}
+
+					asserter.failStack = filteredStack
 				}
 			}()
 
@@ -128,7 +141,9 @@ func (ss *Stepper) RunSteps(t TB) {
 
 			red("STEP %s FAILED\n", step.desc)
 			dumpLogLines(t, asserter.logLines)
-			fmt.Printf("Stack: %s\n", string(asserter.failStack))
+			if len(asserter.failStack) > 0 {
+				fmt.Printf("Stack: %s\n", strings.Join(asserter.failStack, "\n"))
+			}
 			t.FailNow()
 		}
 	}
@@ -168,7 +183,7 @@ type asserter struct {
 	t         TB
 	logLines  []logLine
 	failed    bool
-	failStack []byte
+	failStack []string
 }
 
 func (t *asserter) NoError(err error) {
@@ -255,9 +270,10 @@ func (t *asserter) Fatalf(format string, args ...interface{}) {
 
 func (t *asserter) FailNow() {
 	t.t.Helper()
-	t.failStack = debug.Stack()
+	//t.failStack = debug.Stack()
 	t.failed = true
-	// TODO: Exit the caller... somehow
+	// Panic exits the caller, and is caught later. This is strange but not
+	// clear if there is any other mechanism in go
 	panic(earlyTestExit)
 }
 
