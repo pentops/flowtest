@@ -1,4 +1,4 @@
-module github.com/interxfi/flowtest
+module github.com/pentops/flowtest
 
 go 1.21.3
 
