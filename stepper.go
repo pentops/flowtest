@@ -32,7 +32,7 @@ func (ss *Stepper) Log(level, message string, fields map[string]interface{}) {
 	})
 }
 
-func dumpLogLines(t TB, logLines []logLine) {
+func dumpLogLines(t RequiresTB, logLines []logLine) {
 	for _, logLine := range logLines {
 		fieldsString := make([]string, 0, len(logLine.fields))
 		for k, v := range logLine.fields {
@@ -102,10 +102,10 @@ func (ss *Stepper) StepC(desc string, fn func(context.Context, Asserter)) {
 	})
 }
 
-func (ss *Stepper) RunSteps(t TB) {
+func (ss *Stepper) RunSteps(t RequiresTB) {
 	ss.RunStepsC(context.Background(), t)
 }
-func (ss *Stepper) RunStepsC(ctx context.Context, t TB) {
+func (ss *Stepper) RunStepsC(ctx context.Context, t RequiresTB) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -200,6 +200,7 @@ type Asserter interface {
 type RequiresTB interface {
 	Helper()
 	Log(args ...interface{})
+	FailNow()
 }
 
 type asserter struct {
