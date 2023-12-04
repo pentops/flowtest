@@ -163,6 +163,7 @@ func (ss *Stepper) RunStepsC(ctx context.Context, t RequiresTB) {
 				fmt.Printf("Stack: %s\n", strings.Join(asserter.failStack, "\n"))
 			}
 			t.FailNow()
+			return
 		}
 	}
 }
