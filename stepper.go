@@ -1,6 +1,7 @@
 package flowtest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -81,10 +82,20 @@ type logLine struct {
 type step struct {
 	desc     string
 	asserter *asserter
-	fn       func(t Asserter)
+	fn       func(context.Context, Asserter)
 }
 
 func (ss *Stepper) Step(desc string, fn func(t Asserter)) {
+	wrapped := func(_ context.Context, a Asserter) {
+		fn(a)
+	}
+	ss.steps = append(ss.steps, &step{
+		desc: desc,
+		fn:   wrapped,
+	})
+}
+
+func (ss *Stepper) StepC(desc string, fn func(context.Context, Asserter)) {
 	ss.steps = append(ss.steps, &step{
 		desc: desc,
 		fn:   fn,
@@ -92,14 +103,21 @@ func (ss *Stepper) Step(desc string, fn func(t Asserter)) {
 }
 
 func (ss *Stepper) RunSteps(t TB) {
+	ss.RunStepsC(context.Background(), t)
+}
+func (ss *Stepper) RunStepsC(ctx context.Context, t TB) {
 	t.Helper()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	color.NoColor = false
 	color.New(color.FgCyan).PrintfFunc()("\n>= %s\n", ss.name)
 	blue := color.New(color.FgBlue).PrintfFunc()
 	red := color.New(color.FgRed).PrintfFunc()
 	for idx, step := range ss.steps {
 		asserter := &asserter{
-			t: t,
+			t:      t,
+			cancel: cancel,
 		}
 		ss.asserter = asserter
 		step.asserter = asserter
@@ -131,7 +149,7 @@ func (ss *Stepper) RunSteps(t TB) {
 				}
 			}()
 
-			step.fn(asserter)
+			step.fn(ctx, asserter)
 		}()
 		if asserter.failed {
 			for _, previous := range ss.steps[0:idx] {
@@ -179,11 +197,17 @@ type Asserter interface {
 	CodeError(err error, code codes.Code)
 }
 
+type RequiresTB interface {
+	Helper()
+	Log(args ...interface{})
+}
+
 type asserter struct {
-	t         TB
+	t         RequiresTB
 	logLines  []logLine
 	failed    bool
 	failStack []string
+	cancel    func()
 }
 
 func (t *asserter) NoError(err error) {
@@ -197,7 +221,7 @@ func (t *asserter) Equal(want, got interface{}) {
 	t.t.Helper()
 	if got == nil || want == nil {
 		if got != want {
-			t.t.Fatalf("got %v, want %v", got, want)
+			t.Fatalf("got %v, want %v", got, want)
 		}
 		return
 	}
@@ -221,15 +245,15 @@ func (t *asserter) Equal(want, got interface{}) {
 
 func (t *asserter) CodeError(err error, code codes.Code) {
 	if err == nil {
-		t.t.Fatalf("got no error, want code %s", code)
+		t.Fatalf("got no error, want code %s", code)
 		return
 	}
 
 	if s, ok := status.FromError(err); !ok {
-		t.t.Fatalf("got error %s (%T), want code %s", err, err, code)
+		t.Fatalf("got error %s (%T), want code %s", err, err, code)
 	} else {
 		if s.Code() != code {
-			t.t.Fatalf("got code %s, want %s", s.Code(), code)
+			t.Fatalf("got code %s, want %s", s.Code(), code)
 		}
 		return
 	}
@@ -253,7 +277,7 @@ func (t *asserter) Log(args ...interface{}) {
 
 func (t *asserter) Logf(format string, args ...interface{}) {
 	t.t.Helper()
-	t.t.Logf(format, args...)
+	t.t.Log(fmt.Sprintf(format, args...))
 }
 
 func (t *asserter) Fatal(args ...interface{}) {
@@ -274,6 +298,7 @@ func (t *asserter) FailNow() {
 	t.failed = true
 	// Panic exits the caller, and is caught later. This is strange but not
 	// clear if there is any other mechanism in go
+	t.cancel()
 	panic(earlyTestExit)
 }
 
@@ -281,10 +306,12 @@ var earlyTestExit = "EARLY EXIT" //struct{}{}
 
 func (t *asserter) Error(args ...interface{}) {
 	t.t.Helper()
-	t.t.Error(args...)
+	t.Log("ERROR", fmt.Sprint(args...))
+	t.failed = true
 }
 
 func (t *asserter) Errorf(format string, args ...interface{}) {
 	t.t.Helper()
-	t.t.Errorf(format, args...)
+	t.Log("ERROR", fmt.Sprintf(format, args...))
+	t.failed = true
 }
