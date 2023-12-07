@@ -2,25 +2,29 @@ package flowtest
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
-	"runtime/debug"
-	"strings"
 
-	"github.com/fatih/color"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-type Stepper struct {
+type Asserter interface {
+	TB
+	Assertion
+}
+
+type Stepper[T RequiresTB] struct {
 	steps    []*step
-	asserter *asserter
+	asserter *stepRun
 	name     string
 }
 
-func (ss *Stepper) Log(level, message string, fields map[string]interface{}) {
+// Log implements a global logger compatible with pentops/log.go/log
+// DefaultLogger, and others, to capture log lines from within the handlers
+// into the test output
+func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) {
 	if ss.asserter == nil {
 		panic("Log called on stepper without a current step")
 	}
@@ -32,60 +36,19 @@ func (ss *Stepper) Log(level, message string, fields map[string]interface{}) {
 	})
 }
 
-func dumpLogLines(t RequiresTB, logLines []logLine) {
-	for _, logLine := range logLines {
-		fieldsString := make([]string, 0, len(logLine.fields))
-		for k, v := range logLine.fields {
-			if err, ok := v.(error); ok {
-				v = err.Error()
-			} else if stringer, ok := v.(fmt.Stringer); ok {
-				v = stringer.String()
-			}
-
-			vStr, err := json.MarshalIndent(v, "  ", "  ")
-			if err != nil {
-				vStr = []byte(fmt.Sprintf("ERROR: %s", err))
-			}
-
-			fieldsString = append(fieldsString, fmt.Sprintf("  %s: %s", k, vStr))
-		}
-		levelColor, ok := levelColors[logLine.level]
-		if !ok {
-			levelColor = color.FgRed
-		}
-
-		levelColorPrint := color.New(levelColor).SprintFunc()
-		fmt.Printf("%s: %s\n  %s\n", levelColorPrint(logLine.level), logLine.message, strings.Join(fieldsString, "\n  "))
-	}
-}
-
-var levelColors = map[string]color.Attribute{
-	"DEBUG": color.FgHiWhite,
-	"INFO":  color.FgGreen,
-	"WARN":  color.FgYellow,
-	"ERROR": color.FgRed,
-	"FATAL": color.FgMagenta,
-}
-
-func NewStepper(name string) *Stepper {
-	return &Stepper{
+func NewStepper[T RequiresTB](name string) *Stepper[T] {
+	return &Stepper[T]{
 		name: name,
 	}
 }
 
-type logLine struct {
-	level   string
-	message string
-	fields  map[string]interface{}
-}
-
 type step struct {
 	desc     string
-	asserter *asserter
+	asserter *stepRun
 	fn       func(context.Context, Asserter)
 }
 
-func (ss *Stepper) Step(desc string, fn func(t Asserter)) {
+func (ss *Stepper[_]) Step(desc string, fn func(t Asserter)) {
 	wrapped := func(_ context.Context, a Asserter) {
 		fn(a)
 	}
@@ -95,87 +58,58 @@ func (ss *Stepper) Step(desc string, fn func(t Asserter)) {
 	})
 }
 
-func (ss *Stepper) StepC(desc string, fn func(context.Context, Asserter)) {
+func (ss *Stepper[_]) StepC(desc string, fn func(context.Context, Asserter)) {
 	ss.steps = append(ss.steps, &step{
 		desc: desc,
 		fn:   fn,
 	})
 }
 
-func (ss *Stepper) RunSteps(t RequiresTB) {
+func (ss *Stepper[T]) RunSteps(t RunnableTB[T]) {
 	ss.RunStepsC(context.Background(), t)
 }
-func (ss *Stepper) RunStepsC(ctx context.Context, t RequiresTB) {
+
+func (ss *Stepper[T]) RunStepsC(ctx context.Context, t RunnableTB[T]) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	color.NoColor = false
-	color.New(color.FgCyan).PrintfFunc()("\n>= %s\n", ss.name)
-	blue := color.New(color.FgBlue).PrintfFunc()
-	red := color.New(color.FgRed).PrintfFunc()
 	for idx, step := range ss.steps {
-		asserter := &asserter{
-			t:      t,
-			cancel: cancel,
-		}
-		ss.asserter = asserter
-		step.asserter = asserter
-		blue("STEP %s\n", step.desc)
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					if r == earlyTestExit {
-						return
-					}
-
-					// Can't use Fatal because that causes a panic loop
-					asserter.log("FATAL", fmt.Sprintf("Test Step Panic: %v", r))
-					asserter.failed = true
-					fullStack := strings.Split(string(debug.Stack()), "\n")
-					filteredStack := make([]string, 0, len(fullStack))
-					filteredStack = append(filteredStack, fullStack[0])
-					collect := false
-					for _, line := range fullStack[1:] {
-						if collect {
-							filteredStack = append(filteredStack, line)
-						} else if strings.Contains(line, "panic.go") {
-							collect = true
-							continue
-						}
-					}
-
-					asserter.failStack = filteredStack
-				}
-			}()
-
+		actuallyDidRun := false
+		success := t.Run(fmt.Sprintf("%d %s", idx, step.desc), func(t T) {
+			actuallyDidRun = true
+			asserter := &stepRun{
+				cancel: cancel,
+			}
+			asserter.assertion = asserter.anon()
+			ss.asserter = asserter
+			step.asserter = asserter
+			asserter.t = t
 			step.fn(ctx, asserter)
-		}()
-		if asserter.failed {
-			for _, previous := range ss.steps[0:idx] {
-				blue("STEP %s - OK\n", previous.desc)
-				dumpLogLines(t, previous.asserter.logLines)
-			}
-
-			red("STEP %s FAILED\n", step.desc)
-			dumpLogLines(t, asserter.logLines)
-			if len(asserter.failStack) > 0 {
-				fmt.Printf("Stack: %s\n", strings.Join(asserter.failStack, "\n"))
-			}
+		})
+		if !actuallyDidRun {
+			// We can't prevent or override this (AFIK), so we just have to fail
+			t.Log(fmt.Sprintf("Step %s did not run - did you call test with a sub-filter?", step.desc))
 			t.FailNow()
+		}
+		if !success {
+			// in an ordinary go test, sub tests can fail then the outer test
+			// continues, which is the main point here: We need all steps to run
+			// in order.
 			return
 		}
 	}
 }
 
+// TB is the subset of the testing.TB interface which the stepper's asserter
+// implements.
 type TB interface {
-
 	//Cleanup(func())
 	Error(args ...any)
 	Errorf(format string, args ...any)
 	//Fail()
 	FailNow()
-	//Failed() bool
+	Failed() bool
 	Fatal(args ...any)
 	Fatalf(format string, args ...any)
 	Helper()
@@ -188,19 +122,6 @@ type TB interface {
 	//Skipf(format string, args ...any)
 	//Skipped() bool
 	//TempDir() string
-
-}
-type Asserter interface {
-	TB
-
-	NoError(err error)
-
-	// Equal asserts that want == got. If extraLog is set, and the first
-	// argument is a string it is used as a format string for the rest of the
-	// arguments. If the first argument is not a string, everything is just
-	// logged
-	Equal(want, got interface{}, extraLog ...interface{})
-	CodeError(err error, code codes.Code)
 }
 
 type RequiresTB interface {
@@ -209,42 +130,131 @@ type RequiresTB interface {
 	FailNow()
 }
 
-type asserter struct {
+// RunnableTB is the subset of the testing.TB interface which this library
+// requires. Keeping it to a minimum to allow alternate implementations
+type RunnableTB[T RequiresTB] interface {
+	RequiresTB
+	Run(name string, f func(T)) bool
+}
+
+type stepRun struct {
 	t         RequiresTB
 	logLines  []logLine
 	failed    bool
 	failStack []string
 	cancel    func()
+	*assertion
 }
 
-func (t *asserter) NoError(err error) {
+func (t *stepRun) Failed() bool {
+	return t.failed
+}
+
+func (t *stepRun) Helper() {
 	t.t.Helper()
+}
+
+func (t *stepRun) log(level, message string) {
+	t.t.Helper()
+	t.t.Log(fmt.Sprintf("%s: %s", level, message))
+}
+
+func (t *stepRun) Log(args ...interface{}) {
+	t.t.Helper()
+	t.log("DEBUG", fmt.Sprint(args...))
+}
+
+func (t *stepRun) Logf(format string, args ...interface{}) {
+	t.t.Helper()
+	t.t.Log(fmt.Sprintf(format, args...))
+}
+
+func (t *stepRun) Fatal(args ...interface{}) {
+	t.t.Helper()
+	t.log("FATAL", fmt.Sprint(args...))
+	t.FailNow()
+}
+
+func (t *stepRun) Fatalf(format string, args ...interface{}) {
+	t.t.Helper()
+	t.log("FATAL", fmt.Sprintf(format, args...))
+	t.FailNow()
+}
+
+func (t *stepRun) FailNow() {
+	t.t.Helper()
+	t.failed = true
+	t.cancel()
+	t.t.FailNow()
+}
+
+func (t *stepRun) Error(args ...interface{}) {
+	t.t.Helper()
+	t.Log("ERROR", fmt.Sprint(args...))
+	t.failed = true
+}
+
+func (t *stepRun) Errorf(format string, args ...interface{}) {
+	t.t.Helper()
+	t.Log("ERROR", fmt.Sprintf(format, args...))
+	t.failed = true
+}
+
+func (t *stepRun) anon() *assertion {
+	return &assertion{
+		name: "",
+		step: t,
+	}
+}
+
+type Assertion interface {
+	// NoError asserts that the error is nil, and fails the test if not
+	NoError(err error)
+
+	// Equal asserts that want == got. If extraLog is set, and the first
+	// argument is a string it is used as a format string for the rest of the
+	// arguments. If the first argument is not a string, everything is just
+	// logged
+	Equal(want, got interface{})
+
+	// CodeError asserts that the error returned was non-nil and a Status error
+	// with the given code
+	CodeError(err error, code codes.Code)
+
+	Assert(name string, args ...interface{}) Assertion
+}
+
+type assertion struct {
+	name string
+	step *stepRun
+}
+
+func (t *assertion) Assert(name string, args ...interface{}) Assertion {
+	return &assertion{
+		name: fmt.Sprintf(name, args...),
+		step: t.step,
+	}
+}
+
+func (t *assertion) fail(format string, args ...interface{}) {
+	t.step.t.Helper()
+	if t.name != "" {
+		format = fmt.Sprintf("%s: %s", t.name, format)
+	}
+	t.step.Fatalf(format, args...)
+}
+
+func (t *assertion) NoError(err error) {
+	t.step.Helper()
 	if err != nil {
-		t.Fatal(err)
+		t.fail("got error %s (%T), want no error", err, err)
 	}
 }
 
-func (t *asserter) failure(logArgs []interface{}, format string, args ...interface{}) {
-	t.t.Helper()
-	if len(logArgs) == 0 {
-		t.Fatalf(format, args...)
-		return
-	}
-	baseString := fmt.Sprintf(format, args...)
-	stringArg, ok := logArgs[0].(string)
-	if !ok {
-		t.Fatalf(baseString)
-		return
-	}
-	furtherString := fmt.Sprintf(stringArg, logArgs[1:]...)
-	t.Fatalf("%s: %s", baseString, furtherString)
-}
-
-func (t *asserter) Equal(want, got interface{}, logArgs ...interface{}) {
-	t.t.Helper()
+func (a *assertion) Equal(want, got interface{}) {
 	if got == nil || want == nil {
 		if got != want {
-			t.failure(logArgs, "got %v, want %v", got, want)
+			a.fail("got %v, want %v", got, want)
 		}
 		return
 	}
@@ -252,91 +262,32 @@ func (t *asserter) Equal(want, got interface{}, logArgs ...interface{}) {
 	if aProto, ok := got.(proto.Message); ok {
 		bProto, ok := want.(proto.Message)
 		if !ok {
-			t.Fatalf("want was a proto, got was not (%T)", got)
+			a.fail("want was a proto, got was not (%T)", got)
 			return
 		}
 		if !proto.Equal(aProto, bProto) {
-			t.failure(logArgs, "got %v, want %v", got, want)
+			a.fail("got %v, want %v", got, want)
 		}
 		return
 	}
 
 	if !reflect.DeepEqual(got, want) {
-		t.failure(logArgs, "got %v, want %v", got, want)
+		a.fail("got %v, want %v", got, want)
 	}
 }
 
-func (t *asserter) CodeError(err error, code codes.Code) {
+func (a *assertion) CodeError(err error, code codes.Code) {
 	if err == nil {
-		t.Fatalf("got no error, want code %s", code)
+		a.fail("got no error, want code %s", code)
 		return
 	}
 
 	if s, ok := status.FromError(err); !ok {
-		t.Fatalf("got error %s (%T), want code %s", err, err, code)
+		a.fail("got error %s (%T), want code %s", err, err, code)
 	} else {
 		if s.Code() != code {
-			t.Fatalf("got code %s, want %s", s.Code(), code)
+			a.fail("got code %s, want %s", s.Code(), code)
 		}
 		return
 	}
-}
-
-func (t *asserter) log(level, message string) {
-	t.t.Helper()
-	t.Logf("%s: %s", level, message)
-	t.logLines = append(t.logLines, logLine{
-		level:   level,
-		message: message,
-	})
-}
-
-func (t *asserter) Helper() {
-	t.t.Helper()
-}
-
-func (t *asserter) Log(args ...interface{}) {
-	t.t.Helper()
-	t.log("DEBUG", fmt.Sprint(args...))
-}
-
-func (t *asserter) Logf(format string, args ...interface{}) {
-	t.t.Helper()
-	t.t.Log(fmt.Sprintf(format, args...))
-}
-
-func (t *asserter) Fatal(args ...interface{}) {
-	t.t.Helper()
-	t.log("FATAL", fmt.Sprint(args...))
-	t.FailNow()
-}
-
-func (t *asserter) Fatalf(format string, args ...interface{}) {
-	t.t.Helper()
-	t.log("FATAL", fmt.Sprintf(format, args...))
-	t.FailNow()
-}
-
-func (t *asserter) FailNow() {
-	t.t.Helper()
-	//t.failStack = debug.Stack()
-	t.failed = true
-	// Panic exits the caller, and is caught later. This is strange but not
-	// clear if there is any other mechanism in go
-	t.cancel()
-	panic(earlyTestExit)
-}
-
-var earlyTestExit = "EARLY EXIT" //struct{}{}
-
-func (t *asserter) Error(args ...interface{}) {
-	t.t.Helper()
-	t.Log("ERROR", fmt.Sprint(args...))
-	t.failed = true
-}
-
-func (t *asserter) Errorf(format string, args ...interface{}) {
-	t.t.Helper()
-	t.Log("ERROR", fmt.Sprintf(format, args...))
-	t.failed = true
 }
