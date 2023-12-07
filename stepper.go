@@ -194,7 +194,12 @@ type Asserter interface {
 	TB
 
 	NoError(err error)
-	Equal(want, got interface{})
+
+	// Equal asserts that want == got. If extraLog is set, and the first
+	// argument is a string it is used as a format string for the rest of the
+	// arguments. If the first argument is not a string, everything is just
+	// logged
+	Equal(want, got interface{}, extraLog ...interface{})
 	CodeError(err error, code codes.Code)
 }
 
@@ -219,11 +224,27 @@ func (t *asserter) NoError(err error) {
 	}
 }
 
-func (t *asserter) Equal(want, got interface{}) {
+func (t *asserter) failure(logArgs []interface{}, format string, args ...interface{}) {
+	t.t.Helper()
+	if len(logArgs) == 0 {
+		t.Fatalf(format, args...)
+		return
+	}
+	baseString := fmt.Sprintf(format, args...)
+	stringArg, ok := logArgs[0].(string)
+	if !ok {
+		t.Fatalf(baseString)
+		return
+	}
+	furtherString := fmt.Sprintf(stringArg, logArgs[1:]...)
+	t.Fatalf("%s: %s", baseString, furtherString)
+}
+
+func (t *asserter) Equal(want, got interface{}, logArgs ...interface{}) {
 	t.t.Helper()
 	if got == nil || want == nil {
 		if got != want {
-			t.Fatalf("got %v, want %v", got, want)
+			t.failure(logArgs, "got %v, want %v", got, want)
 		}
 		return
 	}
@@ -235,13 +256,13 @@ func (t *asserter) Equal(want, got interface{}) {
 			return
 		}
 		if !proto.Equal(aProto, bProto) {
-			t.Fatalf("got %v, want %v", got, want)
+			t.failure(logArgs, "got %v, want %v", got, want)
 		}
 		return
 	}
 
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+		t.failure(logArgs, "got %v, want %v", got, want)
 	}
 }
 
@@ -262,6 +283,8 @@ func (t *asserter) CodeError(err error, code codes.Code) {
 }
 
 func (t *asserter) log(level, message string) {
+	t.t.Helper()
+	t.Logf("%s: %s", level, message)
 	t.logLines = append(t.logLines, logLine{
 		level:   level,
 		message: message,
