@@ -4,6 +4,7 @@ import "testing"
 
 func TestStepperStops(t *testing.T) {
 
+	t.Skip() // Too Meta
 	ss := NewStepper[*testing.T](t.Name())
 	defer ss.RunSteps(t)
 

@@ -3,11 +3,6 @@ package flowtest
 import (
 	"context"
 	"fmt"
-	"reflect"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 type Asserter interface {
@@ -204,90 +199,5 @@ func (t *stepRun) anon() *assertion {
 	return &assertion{
 		name: "",
 		step: t,
-	}
-}
-
-type Assertion interface {
-	// NoError asserts that the error is nil, and fails the test if not
-	NoError(err error)
-
-	// Equal asserts that want == got. If extraLog is set, and the first
-	// argument is a string it is used as a format string for the rest of the
-	// arguments. If the first argument is not a string, everything is just
-	// logged
-	Equal(want, got interface{})
-
-	// CodeError asserts that the error returned was non-nil and a Status error
-	// with the given code
-	CodeError(err error, code codes.Code)
-
-	Assert(name string, args ...interface{}) Assertion
-}
-
-type assertion struct {
-	name string
-	step *stepRun
-}
-
-func (t *assertion) Assert(name string, args ...interface{}) Assertion {
-	return &assertion{
-		name: fmt.Sprintf(name, args...),
-		step: t.step,
-	}
-}
-
-func (t *assertion) fail(format string, args ...interface{}) {
-	t.step.t.Helper()
-	if t.name != "" {
-		format = fmt.Sprintf("%s: %s", t.name, format)
-	}
-	t.step.Fatalf(format, args...)
-}
-
-func (t *assertion) NoError(err error) {
-	t.step.Helper()
-	if err != nil {
-		t.fail("got error %s (%T), want no error", err, err)
-	}
-}
-
-func (a *assertion) Equal(want, got interface{}) {
-	if got == nil || want == nil {
-		if got != want {
-			a.fail("got %v, want %v", got, want)
-		}
-		return
-	}
-
-	if aProto, ok := got.(proto.Message); ok {
-		bProto, ok := want.(proto.Message)
-		if !ok {
-			a.fail("want was a proto, got was not (%T)", got)
-			return
-		}
-		if !proto.Equal(aProto, bProto) {
-			a.fail("got %v, want %v", got, want)
-		}
-		return
-	}
-
-	if !reflect.DeepEqual(got, want) {
-		a.fail("got %v, want %v", got, want)
-	}
-}
-
-func (a *assertion) CodeError(err error, code codes.Code) {
-	if err == nil {
-		a.fail("got no error, want code %s", code)
-		return
-	}
-
-	if s, ok := status.FromError(err); !ok {
-		a.fail("got error %s (%T), want code %s", err, err, code)
-	} else {
-		if s.Code() != code {
-			a.fail("got code %s, want %s", s.Code(), code)
-		}
-		return
 	}
 }

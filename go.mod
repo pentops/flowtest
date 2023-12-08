@@ -5,6 +5,7 @@ go 1.21.3
 require (
 	github.com/fatih/color v1.15.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
+	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
 )
