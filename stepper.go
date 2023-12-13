@@ -21,7 +21,7 @@ type Stepper[T RequiresTB] struct {
 // into the test output
 func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) {
 	if ss.asserter == nil {
-		panic("Log called on stepper without a current step")
+		panic(fmt.Sprintf("Log called on stepper without a current step (level: %s and message: %s)", level, message))
 	}
 
 	ss.asserter.logLines = append(ss.asserter.logLines, logLine{
@@ -83,7 +83,7 @@ func (ss *Stepper[T]) RunStepsC(ctx context.Context, t RunnableTB[T]) {
 			step.fn(ctx, asserter)
 		})
 		if !actuallyDidRun {
-			// We can't prevent or override this (AFIK), so we just have to fail
+			// We can't prevent or override this (AFAIK), so we just have to fail
 			t.Log(fmt.Sprintf("Step %s did not run - did you call test with a sub-filter?", step.desc))
 			t.FailNow()
 		}
