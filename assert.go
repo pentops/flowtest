@@ -30,6 +30,8 @@ type Assertion interface {
 	// CodeError asserts that the error returned was non-nil and a Status error
 	// with the given code
 	CodeError(err error, code codes.Code)
+
+	NotEmpty(got interface{})
 }
 
 type assertion struct {
@@ -92,6 +94,20 @@ func (a *assertion) Equal(want, got interface{}) {
 
 	if !reflect.DeepEqual(got, want) {
 		a.fail("got %v, want %v", got, want)
+	}
+
+}
+
+func (a *assertion) NotEmpty(got interface{}) {
+	a.step.Helper()
+	if got == nil {
+		a.fail("got nil, want non-nil")
+		return
+	}
+
+	rv := reflect.ValueOf(got)
+	if rv.IsZero() {
+		a.fail("got zero value, want non-zero")
 	}
 
 }

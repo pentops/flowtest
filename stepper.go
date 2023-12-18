@@ -149,31 +149,50 @@ func (t *stepRun) Helper() {
 	t.t.Helper()
 }
 
-func (t *stepRun) log(level, message string) {
+func (t *stepRun) log(level LogLevel, args ...interface{}) {
 	t.t.Helper()
-	t.t.Log(fmt.Sprintf("%s: %s", level, message))
+	if levelLogger, ok := t.t.(levelLogger); ok {
+		levelLogger.LevelLog(level, args...)
+	} else {
+		if level == LogLevelDefault {
+			t.t.Log(args...)
+		} else {
+			t.t.Log(fmt.Sprintf("%s: %s", level, fmt.Sprint(args...)))
+		}
+	}
 }
 
 func (t *stepRun) Log(args ...interface{}) {
 	t.t.Helper()
-	t.log("DEBUG", fmt.Sprint(args...))
+	t.log(LogLevelDefault, args...)
 }
 
 func (t *stepRun) Logf(format string, args ...interface{}) {
 	t.t.Helper()
-	t.t.Log(fmt.Sprintf(format, args...))
+	t.log(LogLevelDefault, fmt.Sprintf(format, args...))
+}
+
+type LogLevel string
+
+const (
+	LogLevelFatal   LogLevel = "FATAL"
+	LogLevelError   LogLevel = "ERROR"
+	LogLevelDefault LogLevel = ""
+)
+
+type levelLogger interface {
+	LevelLog(level LogLevel, args ...interface{})
 }
 
 func (t *stepRun) Fatal(args ...interface{}) {
 	t.t.Helper()
-	t.log("FATAL", fmt.Sprint(args...))
+	t.log(LogLevelFatal, fmt.Sprint(args...))
 	t.FailNow()
 }
 
 func (t *stepRun) Fatalf(format string, args ...interface{}) {
 	t.t.Helper()
-	t.log("FATAL", fmt.Sprintf(format, args...))
-	t.FailNow()
+	t.Fatal(fmt.Sprintf(format, args...))
 }
 
 func (t *stepRun) FailNow() {
@@ -185,13 +204,13 @@ func (t *stepRun) FailNow() {
 
 func (t *stepRun) Error(args ...interface{}) {
 	t.t.Helper()
-	t.Log("ERROR", fmt.Sprint(args...))
+	t.log("ERROR", args...)
 	t.failed = true
 }
 
 func (t *stepRun) Errorf(format string, args ...interface{}) {
 	t.t.Helper()
-	t.Log("ERROR", fmt.Sprintf(format, args...))
+	t.Error(fmt.Sprintf(format, args...))
 	t.failed = true
 }
 
