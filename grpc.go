@@ -44,6 +44,7 @@ func (gg *GRPCPair) ServeUntilDone(t TB, ctx context.Context) {
 	}()
 	go func() {
 		<-ctx.Done()
+		t.Log("stopping grpc server")
 		gg.Server.GracefulStop()
 		gg.Client.Close()
 		gg.listener.Close()

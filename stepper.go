@@ -11,9 +11,10 @@ type Asserter interface {
 }
 
 type Stepper[T RequiresTB] struct {
-	steps    []*step
-	asserter *stepRun
-	name     string
+	steps      []*step
+	variations []*step
+	asserter   *stepRun
+	name       string
 }
 
 // Log implements a global logger compatible with pentops/log.go/log
@@ -60,40 +61,76 @@ func (ss *Stepper[_]) StepC(desc string, fn func(context.Context, Asserter)) {
 	})
 }
 
+func (ss *Stepper[_]) Variation(desc string, fn func(t Asserter)) {
+	wrapped := func(_ context.Context, a Asserter) {
+		fn(a)
+	}
+	ss.variations = append(ss.variations, &step{
+		desc: desc,
+		fn:   wrapped,
+	})
+}
+
+func (ss *Stepper[_]) VariationC(desc string, fn func(context.Context, Asserter)) {
+	ss.variations = append(ss.variations, &step{
+		desc: desc,
+		fn:   fn,
+	})
+}
+
 func (ss *Stepper[T]) RunSteps(t RunnableTB[T]) {
 	ss.RunStepsC(context.Background(), t)
 }
 
 func (ss *Stepper[T]) RunStepsC(ctx context.Context, t RunnableTB[T]) {
 	t.Helper()
+
+	if len(ss.variations) > 0 {
+		for variationIdx, variation := range ss.variations {
+			success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %s", variationIdx, variation.desc), variation)
+			if !success {
+				return
+			}
+			for idx, step := range ss.steps {
+				success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %d %s", variationIdx, idx, step.desc), step)
+				if !success {
+					return
+				}
+			}
+
+		}
+	} else {
+		for idx, step := range ss.steps {
+			success := ss.runStep(ctx, t, fmt.Sprintf("%d %s", idx, step.desc), step)
+			if !success {
+				return
+			}
+		}
+	}
+}
+
+func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string, step *step) bool {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	for idx, step := range ss.steps {
-		actuallyDidRun := false
-		success := t.Run(fmt.Sprintf("%d %s", idx, step.desc), func(t T) {
-			actuallyDidRun = true
-			asserter := &stepRun{
-				cancel: cancel,
-			}
-			asserter.assertion = asserter.anon()
-			ss.asserter = asserter
-			step.asserter = asserter
-			asserter.t = t
-			step.fn(ctx, asserter)
-		})
-		if !actuallyDidRun {
-			// We can't prevent or override this (AFAIK), so we just have to fail
-			t.Log(fmt.Sprintf("Step %s did not run - did you call test with a sub-filter?", step.desc))
-			t.FailNow()
+	actuallyDidRun := false
+	success := t.Run(name, func(t T) {
+		actuallyDidRun = true
+		asserter := &stepRun{
+			cancel: cancel,
 		}
-		if !success {
-			// in an ordinary go test, sub tests can fail then the outer test
-			// continues, which is the main point here: We need all steps to run
-			// in order.
-			return
-		}
+		asserter.assertion = asserter.anon()
+		ss.asserter = asserter
+		step.asserter = asserter
+		asserter.t = t
+		step.fn(ctx, asserter)
+	})
+	if !actuallyDidRun {
+		// We can't prevent or override this (AFAIK), so we just have to fail
+		t.Log(fmt.Sprintf("Step %s did not run - did you call test with a sub-filter?", step.desc))
+		t.FailNow()
 	}
+	return success
 }
 
 // TB is the subset of the testing.TB interface which the stepper's asserter
