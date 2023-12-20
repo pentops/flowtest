@@ -15,6 +15,17 @@ type Stepper[T RequiresTB] struct {
 	variations []*step
 	asserter   *stepRun
 	name       string
+
+	preStepHooks      []func(a Asserter) error
+	preVariationHooks []func(a Asserter) error
+}
+
+func (ss *Stepper[T]) PreStepHook(fn func(a Asserter) error) {
+	ss.preStepHooks = append(ss.preStepHooks, fn)
+}
+
+func (ss *Stepper[T]) PreVariationHook(fn func(a Asserter) error) {
+	ss.preVariationHooks = append(ss.preVariationHooks, fn)
 }
 
 // Log implements a global logger compatible with pentops/log.go/log
@@ -87,12 +98,12 @@ func (ss *Stepper[T]) RunStepsC(ctx context.Context, t RunnableTB[T]) {
 
 	if len(ss.variations) > 0 {
 		for variationIdx, variation := range ss.variations {
-			success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %s", variationIdx, variation.desc), variation)
+			success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %s", variationIdx, variation.desc), variation, ss.preVariationHooks)
 			if !success {
 				return
 			}
 			for idx, step := range ss.steps {
-				success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %d %s", variationIdx, idx, step.desc), step)
+				success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %d %s", variationIdx, idx, step.desc), step, ss.preStepHooks)
 				if !success {
 					return
 				}
@@ -101,7 +112,7 @@ func (ss *Stepper[T]) RunStepsC(ctx context.Context, t RunnableTB[T]) {
 		}
 	} else {
 		for idx, step := range ss.steps {
-			success := ss.runStep(ctx, t, fmt.Sprintf("%d %s", idx, step.desc), step)
+			success := ss.runStep(ctx, t, fmt.Sprintf("%d %s", idx, step.desc), step, ss.preStepHooks)
 			if !success {
 				return
 			}
@@ -109,7 +120,7 @@ func (ss *Stepper[T]) RunStepsC(ctx context.Context, t RunnableTB[T]) {
 	}
 }
 
-func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string, step *step) bool {
+func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string, step *step, hooks []func(t Asserter) error) bool {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -123,6 +134,15 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 		ss.asserter = asserter
 		step.asserter = asserter
 		asserter.t = t
+
+		for _, hook := range hooks {
+			err := hook(ss.asserter)
+			if err != nil {
+				t.Log("Pre hook failed", err)
+				t.FailNow()
+			}
+		}
+
 		step.fn(ctx, asserter)
 	})
 	if !actuallyDidRun {
