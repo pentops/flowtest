@@ -180,6 +180,7 @@ type RequiresTB interface {
 	Helper()
 	Log(args ...interface{})
 	FailNow()
+	Fail()
 }
 
 // RunnableTB is the subset of the testing.TB interface which this library
@@ -262,6 +263,7 @@ func (t *stepRun) FailNow() {
 func (t *stepRun) Error(args ...interface{}) {
 	t.t.Helper()
 	t.log("ERROR", args...)
+	t.t.Fail()
 	t.failed = true
 }
 
