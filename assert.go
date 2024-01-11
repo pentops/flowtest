@@ -35,15 +35,13 @@ type Assertion interface {
 }
 
 type assertion struct {
-	name string
-	step interface {
-		Helper()
-		Fatal(args ...interface{})
-	}
+	name   string
+	fatal  func(args ...interface{})
+	helper func()
 }
 
 func (a *assertion) T(failure *Failure) {
-	a.step.Helper()
+	a.helper()
 	if failure != nil {
 		a.fail(string(*failure))
 	}
@@ -51,28 +49,29 @@ func (a *assertion) T(failure *Failure) {
 
 func (a *assertion) Name(name string, args ...interface{}) Assertion {
 	return &assertion{
-		name: fmt.Sprintf(name, args...),
-		step: a.step,
+		name:   fmt.Sprintf(name, args...),
+		helper: a.helper,
+		fatal:  a.fatal,
 	}
 }
 
 func (a *assertion) fail(format string, args ...interface{}) {
-	a.step.Helper()
+	a.helper()
 	if a.name != "" {
 		format = fmt.Sprintf("%s: %s", a.name, format)
 	}
-	a.step.Fatal(fmt.Sprintf(format, args...))
+	a.fatal(fmt.Sprintf(format, args...))
 }
 
 func (a *assertion) NoError(err error) {
-	a.step.Helper()
+	a.helper()
 	if err != nil {
 		a.fail("got error %s (%T), want no error", err, err)
 	}
 }
 
 func (a *assertion) Equal(want, got interface{}) {
-	a.step.Helper()
+	a.helper()
 	if got == nil || want == nil {
 		if got != want {
 			a.fail("got %v, want %v", got, want)
@@ -99,7 +98,7 @@ func (a *assertion) Equal(want, got interface{}) {
 }
 
 func (a *assertion) NotEmpty(got interface{}) {
-	a.step.Helper()
+	a.helper()
 	if got == nil {
 		a.fail("got nil, want non-nil")
 		return

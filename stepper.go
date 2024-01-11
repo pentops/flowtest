@@ -129,11 +129,11 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 		actuallyDidRun = true
 		asserter := &stepRun{
 			cancel: cancel,
+			t:      t,
 		}
 		asserter.assertion = asserter.anon()
 		ss.asserter = asserter
 		step.asserter = asserter
-		asserter.t = t
 
 		for _, hook := range hooks {
 			err := hook(ss.asserter)
@@ -275,7 +275,8 @@ func (t *stepRun) Errorf(format string, args ...interface{}) {
 
 func (t *stepRun) anon() *assertion {
 	return &assertion{
-		name: "",
-		step: t,
+		name:   "",
+		helper: t.t.Helper,
+		fatal:  t.Fatal,
 	}
 }

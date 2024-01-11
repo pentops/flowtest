@@ -31,7 +31,8 @@ func TestT(t *testing.T) {
 	} {
 		tw := &testWrap{}
 		a := &assertion{
-			step: tw,
+			fatal:  tw.Fatal,
+			helper: tw.Helper,
 		}
 		a.T(tc)
 		if tw.failed {
@@ -47,7 +48,8 @@ func TestT(t *testing.T) {
 	} {
 		tw := &testWrap{}
 		a := &assertion{
-			step: tw,
+			fatal:  tw.Fatal,
+			helper: tw.Helper,
 		}
 		a.T(tc)
 		if !tw.failed {
@@ -75,7 +77,8 @@ func TestEquals(t *testing.T) {
 		t.Run(fmt.Sprintf("%v == %v", tc.A, tc.B), func(t *testing.T) {
 			tw := &testWrap{}
 			a := &assertion{
-				step: tw,
+				fatal:  tw.Fatal,
+				helper: tw.Helper,
 			}
 			a.Equal(tc.A, tc.B)
 			if tc.Equal {
