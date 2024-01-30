@@ -3,6 +3,7 @@ package flowtest
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type Asserter interface {
@@ -36,11 +37,17 @@ func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) 
 		panic(fmt.Sprintf("Log called on stepper without a current step (level: %s and message: %s)", level, message))
 	}
 
-	ss.asserter.logLines = append(ss.asserter.logLines, logLine{
-		level:   level,
-		message: message,
-		fields:  fields,
-	})
+	fieldStrings := make([]string, 0, len(fields)+1)
+	fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %s", level, message))
+	for k, v := range fields {
+		if stackLines, ok := v.([]string); ok && k == "stack" {
+			fieldStrings = append(fieldStrings, stackLines...)
+			continue
+		}
+		fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %v", k, v))
+	}
+	ss.asserter.t.Log(strings.Join(fieldStrings, "\n"))
+
 }
 
 func NewStepper[T RequiresTB](name string) *Stepper[T] {
@@ -192,7 +199,6 @@ type RunnableTB[T RequiresTB] interface {
 
 type stepRun struct {
 	t         RequiresTB
-	logLines  []logLine
 	failed    bool
 	failStack []string
 	cancel    func()
