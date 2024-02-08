@@ -46,7 +46,7 @@ func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) 
 		}
 		fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %v", k, v))
 	}
-	ss.asserter.t.Log(strings.Join(fieldStrings, "\n"))
+	ss.asserter.Log(strings.Join(fieldStrings, "\n"))
 
 }
 
@@ -135,8 +135,8 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 	success := t.Run(name, func(t T) {
 		actuallyDidRun = true
 		asserter := &stepRun{
-			cancel: cancel,
-			t:      t,
+			cancel:     cancel,
+			RequiresTB: t,
 		}
 		asserter.assertion = asserter.anon()
 		ss.asserter = asserter
@@ -198,7 +198,7 @@ type RunnableTB[T RequiresTB] interface {
 }
 
 type stepRun struct {
-	t         RequiresTB
+	RequiresTB
 	failed    bool
 	failStack []string
 	cancel    func()
@@ -209,30 +209,26 @@ func (t *stepRun) Failed() bool {
 	return t.failed
 }
 
-func (t *stepRun) Helper() {
-	t.t.Helper()
-}
-
 func (t *stepRun) log(level LogLevel, args ...interface{}) {
-	t.t.Helper()
-	if levelLogger, ok := t.t.(levelLogger); ok {
+	t.Helper()
+	if levelLogger, ok := t.RequiresTB.(levelLogger); ok {
 		levelLogger.LevelLog(level, args...)
 	} else {
 		if level == LogLevelDefault {
-			t.t.Log(args...)
+			t.RequiresTB.Log(args...)
 		} else {
-			t.t.Log(fmt.Sprintf("%s: %s", level, fmt.Sprint(args...)))
+			t.RequiresTB.Log(fmt.Sprintf("%s: %s", level, fmt.Sprint(args...)))
 		}
 	}
 }
 
 func (t *stepRun) Log(args ...interface{}) {
-	t.t.Helper()
+	t.Helper()
 	t.log(LogLevelDefault, args...)
 }
 
 func (t *stepRun) Logf(format string, args ...interface{}) {
-	t.t.Helper()
+	t.Helper()
 	t.log(LogLevelDefault, fmt.Sprintf(format, args...))
 }
 
@@ -249,32 +245,32 @@ type levelLogger interface {
 }
 
 func (t *stepRun) Fatal(args ...interface{}) {
-	t.t.Helper()
+	t.Helper()
 	t.log(LogLevelFatal, fmt.Sprint(args...))
 	t.FailNow()
 }
 
 func (t *stepRun) Fatalf(format string, args ...interface{}) {
-	t.t.Helper()
+	t.Helper()
 	t.Fatal(fmt.Sprintf(format, args...))
 }
 
 func (t *stepRun) FailNow() {
-	t.t.Helper()
+	t.Helper()
 	t.failed = true
 	t.cancel()
-	t.t.FailNow()
+	t.RequiresTB.FailNow()
 }
 
 func (t *stepRun) Error(args ...interface{}) {
-	t.t.Helper()
+	t.Helper()
 	t.log("ERROR", args...)
-	t.t.Fail()
+	t.RequiresTB.Fail()
 	t.failed = true
 }
 
 func (t *stepRun) Errorf(format string, args ...interface{}) {
-	t.t.Helper()
+	t.Helper()
 	t.Error(fmt.Sprintf(format, args...))
 	t.failed = true
 }
@@ -282,7 +278,7 @@ func (t *stepRun) Errorf(format string, args ...interface{}) {
 func (t *stepRun) anon() *assertion {
 	return &assertion{
 		name:   "",
-		helper: t.t.Helper,
+		helper: t.Helper,
 		fatal:  t.Fatal,
 	}
 }
