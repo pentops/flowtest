@@ -33,9 +33,6 @@ func (ss *Stepper[T]) PreVariationHook(fn func(a Asserter) error) {
 // DefaultLogger, and others, to capture log lines from within the handlers
 // into the test output
 func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) {
-	if ss.asserter == nil {
-		panic(fmt.Sprintf("Log called on stepper without a current step (level: %s and message: %s)", level, message))
-	}
 
 	fieldStrings := make([]string, 0, len(fields)+1)
 	fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %s", level, message))
@@ -45,6 +42,10 @@ func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) 
 			continue
 		}
 		fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %v", k, v))
+	}
+	if ss.asserter == nil {
+		fmt.Printf("WARNING: Log called on stepper without a current step (level: %s and message: %s)\n%s", level, message, strings.Join(fieldStrings, "\n"))
+		return
 	}
 	ss.asserter.Log(strings.Join(fieldStrings, "\n"))
 
