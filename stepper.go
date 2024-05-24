@@ -54,10 +54,48 @@ func (ss *Stepper[T]) PostStepHook(fn func(context.Context, Asserter) error) {
 	ss.postStepHooks = append(ss.postStepHooks, fn)
 }
 
-// Log implements a global logger compatible with pentops/log.go/log
+// StepSetter is a minimal interface to configure the steps and hooks for a test.
+type StepSetter interface {
+	// Setup steps run at the start of each RunSteps call, or the start of each
+	// Variation. The context passed to the setup will be canceled after all steps
+	// are completed, or after any fatal error.
+	Setup(fn callbackErr)
+
+	// PreStepHook runs before every step, after any variations.
+	PreStepHook(fn func(context.Context, Asserter) error)
+
+	// PreVariationHook runs before every Variation, before any steps.
+	PreVariationHook(fn func(context.Context, Asserter) error)
+
+	// PostStepHook runs after every step.
+	PostStepHook(fn func(context.Context, Asserter) error)
+
+	// Step registers a function to make assertions on the running code, this is the
+	// main assertion set.
+	Step(desc string, fn func(context.Context, Asserter))
+
+	// Adds a variation to the stepper. Each Variation causes the Setup hooks,
+	// followed by the Variation, then every registered Step (and hooks), allowing
+	// one call to RunSteps to run multiple variations of the same test.
+	Variation(desc string, fn func(context.Context, Asserter))
+
+	// LevelLog implements a global logger compatible with pentops/log.go/log.
+	// Log lines will be captured into the currently running test step.
+	LevelLog(level, message string, fields map[string]interface{})
+
+	// Log logs any object, it can be used within test callbacks.
+	// Log lines will be captured into the currently running test step.
+	Log(...interface{})
+}
+
+func (ss *Stepper[T]) Log(args ...interface{}) {
+	ss.asserter.Log(args...)
+}
+
+// LevelLog implements a global logger compatible with pentops/log.go/log
 // DefaultLogger, and others, to capture log lines from within the handlers
 // into the test output
-func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) {
+func (ss *Stepper[T]) LevelLog(level, message string, fields map[string]interface{}) {
 
 	fieldStrings := make([]string, 0, len(fields)+1)
 	fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %s", level, message))
@@ -72,7 +110,7 @@ func (ss *Stepper[T]) Log(level, message string, fields map[string]interface{}) 
 		fmt.Printf("WARNING: Log called on stepper without a current step (level: %s and message: %s)\n%s", level, message, strings.Join(fieldStrings, "\n"))
 		return
 	}
-	ss.asserter.Log(strings.Join(fieldStrings, "\n"))
+	ss.Log(strings.Join(fieldStrings, "\n"))
 
 }
 
