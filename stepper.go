@@ -11,22 +11,47 @@ type Asserter interface {
 	Assertion
 }
 
+type step struct {
+	desc     string
+	asserter *stepRun
+	fn       callback
+}
+
+type callback func(context.Context, Asserter)
+type callbackErr func(context.Context, Asserter) error
+
 type Stepper[T RequiresTB] struct {
 	steps      []*step
 	variations []*step
 	asserter   *stepRun
 	name       string
 
-	preStepHooks      []func(a Asserter) error
-	preVariationHooks []func(a Asserter) error
+	setup             []callbackErr
+	preStepHooks      []callbackErr
+	preVariationHooks []callbackErr
+	postStepHooks     []callbackErr
 }
 
-func (ss *Stepper[T]) PreStepHook(fn func(a Asserter) error) {
+// Setup steps run at the start of each RunSteps call, or the start of each
+// Variation. The context passed to the setup will be canceled after all steps
+// are completed, or after any fatal error.
+func (ss *Stepper[T]) Setup(fn callbackErr) {
+	ss.setup = append(ss.setup, fn)
+}
+
+// PreStepHook runs before every step, after any variations.
+func (ss *Stepper[T]) PreStepHook(fn func(context.Context, Asserter) error) {
 	ss.preStepHooks = append(ss.preStepHooks, fn)
 }
 
-func (ss *Stepper[T]) PreVariationHook(fn func(a Asserter) error) {
+// PreVariationHook runs before every Variation, before any steps.
+func (ss *Stepper[T]) PreVariationHook(fn func(context.Context, Asserter) error) {
 	ss.preVariationHooks = append(ss.preVariationHooks, fn)
+}
+
+// PostStepHook runs after every step.
+func (ss *Stepper[T]) PostStepHook(fn func(context.Context, Asserter) error) {
+	ss.postStepHooks = append(ss.postStepHooks, fn)
 }
 
 // Log implements a global logger compatible with pentops/log.go/log
@@ -57,78 +82,109 @@ func NewStepper[T RequiresTB](name string) *Stepper[T] {
 	}
 }
 
-type step struct {
-	desc     string
-	asserter *stepRun
-	fn       func(context.Context, Asserter)
-}
-
-func (ss *Stepper[_]) Step(desc string, fn func(t Asserter)) {
-	wrapped := func(_ context.Context, a Asserter) {
-		fn(a)
-	}
-	ss.steps = append(ss.steps, &step{
-		desc: desc,
-		fn:   wrapped,
-	})
-}
-
-func (ss *Stepper[_]) StepC(desc string, fn func(context.Context, Asserter)) {
+// Step registers a function to make assertions on the running code, this is the
+// main assertion set.
+func (ss *Stepper[_]) Step(desc string, fn func(context.Context, Asserter)) {
 	ss.steps = append(ss.steps, &step{
 		desc: desc,
 		fn:   fn,
 	})
 }
 
-func (ss *Stepper[_]) Variation(desc string, fn func(t Asserter)) {
-	wrapped := func(_ context.Context, a Asserter) {
-		fn(a)
-	}
-	ss.variations = append(ss.variations, &step{
-		desc: desc,
-		fn:   wrapped,
-	})
-}
-
-func (ss *Stepper[_]) VariationC(desc string, fn func(context.Context, Asserter)) {
+// Adds a variation to the stepper. Each Variation causes the Setup hooks,
+// followed by the Variation, then every registered Step (and hooks), allowing
+// one call to RunSteps to run multiple variations of the same test.
+func (ss *Stepper[_]) Variation(desc string, fn func(context.Context, Asserter)) {
 	ss.variations = append(ss.variations, &step{
 		desc: desc,
 		fn:   fn,
 	})
 }
 
+// RunSteps is the main entry point of the stepper. For each Variation, or just
+// once if no variation is registered, the Setup hooks are run, followed by the
+// Variation, then every registered Step with pre and post hoooks.
 func (ss *Stepper[T]) RunSteps(t RunnableTB[T]) {
-	ss.RunStepsC(context.Background(), t)
+	ctx := context.Background()
+	t.Helper()
+	ss.RunStepsWithContext(ctx, t)
 }
 
-func (ss *Stepper[T]) RunStepsC(ctx context.Context, t RunnableTB[T]) {
+// RunStepsWithContext allows the caller to provide a context to the stepper.
+func (ss *Stepper[T]) RunStepsWithContext(ctx context.Context, t RunnableTB[T]) {
 	t.Helper()
 
 	if len(ss.variations) > 0 {
 		for variationIdx, variation := range ss.variations {
-			success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %s", variationIdx, variation.desc), variation, ss.preVariationHooks)
+			success := ss.runVariation(ctx, t, variationIdx, variation)
 			if !success {
 				return
-			}
-			for idx, step := range ss.steps {
-				success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %d %s", variationIdx, idx, step.desc), step, ss.preStepHooks)
-				if !success {
-					return
-				}
 			}
 
 		}
-	} else {
-		for idx, step := range ss.steps {
-			success := ss.runStep(ctx, t, fmt.Sprintf("%d %s", idx, step.desc), step, ss.preStepHooks)
-			if !success {
-				return
-			}
+		return
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if err := ss.runHooks(ctx, cancel, t, ss.setup...); err != nil {
+		t.Log("Setup failed", err)
+		t.FailNow()
+	}
+
+	for idx, step := range ss.steps {
+		success := ss.runStep(ctx, t, fmt.Sprintf("%d %s", idx, step.desc), step, ss.preStepHooks, ss.postStepHooks)
+		if !success {
+			return
 		}
 	}
 }
 
-func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string, step *step, hooks []func(t Asserter) error) bool {
+func (ss *Stepper[T]) runVariation(ctx context.Context, t RunnableTB[T], variationIdx int, variation *step) bool {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if err := ss.runHooks(ctx, cancel, t, ss.setup...); err != nil {
+		t.Log("Setup failed", err)
+		t.FailNow()
+	}
+
+	success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %s", variationIdx, variation.desc), variation, ss.preVariationHooks, nil)
+	if !success {
+		return false
+	}
+	for idx, step := range ss.steps {
+		success := ss.runStep(ctx, t, fmt.Sprintf("vary %d %d %s", variationIdx, idx, step.desc), step, ss.preStepHooks, ss.postStepHooks)
+		if !success {
+			return false
+		}
+	}
+	return true
+}
+
+func (ss *Stepper[T]) runHooks(ctx context.Context, cancel func(), t RunnableTB[T], fns ...callbackErr) error {
+	if len(fns) == 0 {
+		return nil
+	}
+	asserter := &stepRun{
+		cancel:     cancel,
+		RequiresTB: t,
+	}
+	asserter.assertion = asserter.anon()
+	ss.asserter = asserter
+	for _, fn := range fns {
+		if err := fn(ctx, asserter); err != nil {
+			return err
+		}
+	}
+
+	if asserter.failed {
+		return fmt.Errorf("hook failed")
+	}
+	return nil
+}
+
+func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string, step *step, preHooks []callbackErr, postHooks []callbackErr) bool {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -143,8 +199,8 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 		ss.asserter = asserter
 		step.asserter = asserter
 
-		for _, hook := range hooks {
-			err := hook(ss.asserter)
+		for _, hook := range preHooks {
+			err := hook(ctx, ss.asserter)
 			if err != nil {
 				t.Log("Pre hook failed", err)
 				t.FailNow()
@@ -152,6 +208,14 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 		}
 
 		step.fn(ctx, asserter)
+
+		for _, hook := range postHooks {
+			err := hook(ctx, ss.asserter)
+			if err != nil {
+				t.Log("Post hook failed", err)
+				t.FailNow()
+			}
+		}
 	})
 	if !actuallyDidRun {
 		// We can't prevent or override this (AFAIK), so we just have to fail

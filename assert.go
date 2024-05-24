@@ -11,8 +11,8 @@ import (
 )
 
 type Assertion interface {
-	// Name creates a named sub-assertion
-	Name(name string, args ...interface{}) Assertion
+	// Sub creates a named sub-assertion
+	Sub(name string, args ...interface{}) Assertion
 
 	// T accepts the assertion types like Equal which use generics and therefore
 	// can't be a method of Assertion directly.
@@ -47,7 +47,7 @@ func (a *assertion) T(failure *Failure) {
 	}
 }
 
-func (a *assertion) Name(name string, args ...interface{}) Assertion {
+func (a *assertion) Sub(name string, args ...interface{}) Assertion {
 	return &assertion{
 		name:   fmt.Sprintf(name, args...),
 		helper: a.helper,
