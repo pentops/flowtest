@@ -31,7 +31,14 @@ type Assertion interface {
 	// with the given code
 	CodeError(err error, code codes.Code)
 
-	NotEmpty(got interface{})
+	// NotEmpty asserts that the given values are not nil or zero values (zero
+	// as in reflect.Value.IsZero)
+	NotEmpty(got ...interface{})
+
+	// NotNil asserts that the given values are not nil, assessing in order and
+	// stopping at the first nil value (i.e. you can pass thing, thing.field,
+	// thing.field.subfield)
+	NotNil(gots ...interface{})
 }
 
 type assertion struct {
@@ -97,18 +104,30 @@ func (a *assertion) Equal(want, got interface{}) {
 
 }
 
-func (a *assertion) NotEmpty(got interface{}) {
+func (a *assertion) NotEmpty(gots ...interface{}) {
 	a.helper()
-	if got == nil {
-		a.fail("got nil, want non-nil")
-		return
+	for _, got := range gots {
+		if got == nil {
+			a.fail("got nil, want non-nil")
+			return
+		}
+
+		rv := reflect.ValueOf(got)
+		if rv.IsZero() {
+			a.fail("got zero value, want non-zero")
+		}
 	}
 
-	rv := reflect.ValueOf(got)
-	if rv.IsZero() {
-		a.fail("got zero value, want non-zero")
-	}
+}
 
+func (a *assertion) NotNil(gots ...interface{}) {
+	a.helper()
+	for _, got := range gots {
+		if got == nil {
+			a.fail("got nil, want non-nil")
+			return
+		}
+	}
 }
 
 func (a *assertion) CodeError(err error, code codes.Code) {

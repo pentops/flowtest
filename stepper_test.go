@@ -1,6 +1,9 @@
 package flowtest
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestStepperStops(t *testing.T) {
 
@@ -8,17 +11,17 @@ func TestStepperStops(t *testing.T) {
 	ss := NewStepper[*testing.T](t.Name())
 	defer ss.RunSteps(t)
 
-	ss.Step("success", func(a Asserter) {
+	ss.Step("success", func(ctx context.Context, a Asserter) {
 		a.Log("this is fine")
 	})
 
-	ss.Step("throw", func(a Asserter) {
+	ss.Step("throw", func(ctx context.Context, a Asserter) {
 		a.Log("step 1 ", map[string]interface{}{"foo": "bar"})
 		a.Equal(true, true)
 		a.Fatal("Test Fatal")
 	})
 
-	ss.Step("after", func(a Asserter) {
+	ss.Step("after", func(ctx context.Context, a Asserter) {
 		t.Fatal("I should not be running")
 	})
 
