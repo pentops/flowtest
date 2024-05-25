@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/pentops/jsonapi/gen/j5/ext/v1/ext_j5pb"
+	"buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 )
 
 func TestSingletonDescriptor(t *testing.T) {
@@ -103,20 +103,19 @@ func TestAnnotations(t *testing.T) {
 		"test.proto": `
 		syntax = "proto3";
 
-		import "j5/ext/v1/annotations.proto";
-
 		package test;
 
+		import "buf/validate/validate.proto";
 
 		message Foo {
-			option (j5.ext.v1.message).is_oneof_wrapper = true;
+			option (buf.validate.message).disabled = true;
 
 			string field1 = 1;
 		}
 
 		message Bar {
-			option (j5.ext.v1.message) = {
-				is_oneof_wrapper: true
+			option (buf.validate.message) = {
+				disabled: true
 			};
 		}
 		`,
@@ -129,11 +128,11 @@ func TestAnnotations(t *testing.T) {
 			t.Fatalf("no %s message", name)
 		}
 
-		opts := proto.GetExtension(msgDesc.Options(), ext_j5pb.E_Message).(*ext_j5pb.MessageOptions)
+		opts := proto.GetExtension(msgDesc.Options(), validate.E_Message).(*validate.MessageConstraints)
 		if opts == nil {
 			t.Fatalf("no %s options", name)
 		}
-		if !opts.IsOneofWrapper {
+		if opts.Disabled == nil || !*opts.Disabled {
 			t.Fatalf("option not set in %s", name)
 		}
 	}
