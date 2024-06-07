@@ -15,12 +15,6 @@ import (
 
 type TBImpl struct {
 	failed bool
-	logs   []logLine
-}
-
-type logLine struct {
-	level flowtest.LogLevel
-	args  []any
 }
 
 func (t *TBImpl) Helper() {}
@@ -49,7 +43,6 @@ func (t *TBImpl) LevelLog(level flowtest.LogLevel, args ...any) {
 		}
 	}
 	fmt.Println(args...)
-	return
 }
 
 func (t *TBImpl) Log(args ...any) {
