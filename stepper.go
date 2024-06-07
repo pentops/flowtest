@@ -302,9 +302,8 @@ type RunnableTB[T RequiresTB] interface {
 
 type stepRun struct {
 	RequiresTB
-	failed    bool
-	failStack []string
-	cancel    func()
+	failed bool
+	cancel func()
 	*assertion
 }
 

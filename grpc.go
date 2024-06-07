@@ -16,7 +16,7 @@ func NewGRPCPair(t TB, middleware ...grpc.UnaryServerInterceptor) *GRPCPair {
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(middleware...)),
 	)
 
-	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := grpc.NewClient("bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -39,12 +39,13 @@ type GRPCPair struct {
 func (gg *GRPCPair) ServeUntilDone(t TB, ctx context.Context) {
 	go func() {
 		if err := gg.Server.Serve(gg.listener); err != nil {
-			t.Logf("grpc server exited: %s", err)
+			if err != grpc.ErrServerStopped {
+				t.Logf("grpc server exited: %s", err)
+			}
 		}
 	}()
 	go func() {
 		<-ctx.Done()
-		t.Log("stopping grpc server")
 		gg.Server.GracefulStop()
 		gg.Client.Close()
 		gg.listener.Close()
