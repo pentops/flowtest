@@ -3,6 +3,7 @@ package flowtest
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 )
 
@@ -89,6 +90,11 @@ type StepSetter interface {
 }
 
 func (ss *Stepper[T]) Log(args ...interface{}) {
+	if ss.asserter == nil {
+		fmt.Printf("WARNING: Log called on stepper without a current step. %s", fmt.Sprint(args...))
+		return
+	}
+	ss.asserter.helper()
 	ss.asserter.Log(args...)
 }
 
@@ -96,6 +102,9 @@ func (ss *Stepper[T]) Log(args ...interface{}) {
 // DefaultLogger, and others, to capture log lines from within the handlers
 // into the test output
 func (ss *Stepper[T]) LevelLog(level, message string, fields map[string]interface{}) {
+	if ss.asserter != nil {
+		ss.asserter.helper()
+	}
 
 	fieldStrings := make([]string, 0, len(fields)+1)
 	fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %s", level, message))
@@ -107,11 +116,52 @@ func (ss *Stepper[T]) LevelLog(level, message string, fields map[string]interfac
 		fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %v", k, v))
 	}
 	if ss.asserter == nil {
-		fmt.Printf("WARNING: Log called on stepper without a current step (level: %s and message: %s)\n%s", level, message, strings.Join(fieldStrings, "\n"))
+		fmt.Printf("WARNING: Log called on stepper without a current step (level: %s and message: %s)\n   |%s\n", level, message, strings.Join(fieldStrings, "\n   |"))
 		return
 	}
 	ss.Log(strings.Join(fieldStrings, "\n"))
 
+}
+
+const maxStackLen = 50
+
+func (ss *Stepper[T]) LogQuery(ctx context.Context, statement string, params ...interface{}) {
+	if ss.asserter != nil {
+		ss.asserter.helper()
+	}
+	var pc [maxStackLen]uintptr
+	n := runtime.Callers(4, pc[:])
+	if n == 0 {
+		ss.Log("No stack available")
+		return
+	}
+	frames := runtime.CallersFrames(pc[:])
+	var frame runtime.Frame
+	var hasMore bool
+	for {
+		frame, hasMore = frames.Next()
+		if !hasMore {
+			break
+		}
+		if strings.HasPrefix(frame.Function, "github.com/pentops/sqrlx.go") {
+			continue
+		}
+		break
+	}
+
+	lines := make([]string, 0, len(params)+1)
+	lines = append(lines, fmt.Sprintf("QUERY (%s:%d)\n%s", frame.File, frame.Line, statement))
+	for i, param := range params {
+		switch param := param.(type) {
+		case []byte:
+			if len(param) > 1 && param[0] == '{' && param[len(param)-1] == '}' {
+				lines = append(lines, fmt.Sprintf("  $%d %s", i+1, string(param)))
+				continue
+			}
+		}
+		lines = append(lines, fmt.Sprintf("  $%d %#v", i+1, param))
+	}
+	ss.Log(strings.Join(lines, "\n"))
 }
 
 func NewStepper[T RequiresTB](name string) *Stepper[T] {
