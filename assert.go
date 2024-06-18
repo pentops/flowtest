@@ -7,6 +7,7 @@ import (
 	"golang.org/x/exp/constraints"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -39,6 +40,12 @@ type Assertion interface {
 	// stopping at the first nil value (i.e. you can pass thing, thing.field,
 	// thing.field.subfield)
 	NotNil(gots ...interface{})
+
+	// Fatal fails the test with the given message
+	Fatal(args ...interface{})
+
+	// Fatalf fails the test with the given format string
+	Fatalf(format string, args ...interface{})
 }
 
 type assertion struct {
@@ -70,10 +77,25 @@ func (a *assertion) fail(format string, args ...interface{}) {
 	a.fatal(fmt.Sprintf(format, args...))
 }
 
+func (a *assertion) Fatal(args ...interface{}) {
+	a.helper()
+	a.fail(fmt.Sprint(args...))
+}
+
+func (a *assertion) Fatalf(format string, args ...interface{}) {
+	a.helper()
+	a.fail(format, args...)
+}
+
 func (a *assertion) NoError(err error) {
 	a.helper()
 	if err != nil {
-		a.fail("got error %s (%T), want no error", err, err)
+		statErr, ok := status.FromError(err)
+		if ok {
+			a.fail("unexpected error %s\n  %s\n", err.Error(), prototext.Format(statErr.Proto()))
+		} else {
+			a.fail("got error %s (%T), want no error", err, err)
+		}
 	}
 }
 
