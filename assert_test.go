@@ -18,7 +18,7 @@ func (t *testWrap) Fatal(args ...interface{}) {
 	t.message = fmt.Sprint(args...)
 }
 
-func TestT(t *testing.T) {
+func TestHappyFailFuncs(t *testing.T) {
 
 	for _, tc := range []*Failure{
 		Equal(1, 1),
@@ -40,6 +40,8 @@ func TestT(t *testing.T) {
 		}
 	}
 
+}
+func TestSadFailFuncs(t *testing.T) {
 	for _, tc := range []*Failure{
 		Equal(1, 2),
 		Equal(1, int(2)),
@@ -92,4 +94,47 @@ func TestEquals(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNotNilHappy(t *testing.T) {
+
+	type testStruct struct{}
+	notNilVals := []interface{}{
+		"foo",
+		1,
+		0,
+		"",
+		[]string{"foo"},
+		[]string{},
+		[]byte{},
+		&struct{}{},
+		testStruct{},
+		&testStruct{},
+	}
+
+	for idx, val := range notNilVals {
+		t.Run(fmt.Sprintf("happy case %d", idx), func(t *testing.T) {
+			if isNil(val) {
+				t.Errorf("val (%v) assessed as nil", val)
+			}
+		})
+	}
+
+	nilVals := []func() interface{}{
+		func() interface{} { return nil },
+		func() interface{} { var a *string; return a },
+		func() interface{} { var a *[]byte; return a },
+		func() interface{} { var a *struct{}; return a },
+		func() interface{} { var a *testStruct; return a },
+	}
+
+	for idx, valFunc := range nilVals {
+		t.Run(fmt.Sprintf("sad case %d", idx), func(t *testing.T) {
+			val := valFunc()
+			if !isNil(val) {
+				t.Errorf("val (%v) assessed as not nil", val)
+			}
+		})
+	}
+
 }

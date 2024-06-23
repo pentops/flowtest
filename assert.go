@@ -142,11 +142,32 @@ func (a *assertion) NotEmpty(gots ...interface{}) {
 
 }
 
+func isNil(got interface{}) bool {
+	if got == nil {
+		return true
+	}
+	rv := reflect.ValueOf(got)
+	if rv.Kind() != reflect.Ptr {
+		return false
+	}
+	return rv.IsNil()
+}
+
 func (a *assertion) NotNil(gots ...interface{}) {
 	a.helper()
 	for _, got := range gots {
-		if got == nil {
-			a.fail("got nil, want non-nil")
+		if isNil(got) {
+			a.fail("value was nil")
+			return
+		}
+	}
+}
+
+func (a *assertion) Nil(gots ...interface{}) {
+	a.helper()
+	for _, got := range gots {
+		if !isNil(got) {
+			a.fail("value was not nil")
 			return
 		}
 	}
