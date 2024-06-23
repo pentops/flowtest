@@ -82,6 +82,7 @@ func NewAsserter(v interface{}) (*Asserter, error) {
 }
 
 func (d *Asserter) Print(t TB) {
+	t.Helper()
 	t.Log(string(d.JSON))
 }
 
@@ -104,31 +105,58 @@ func (d *Asserter) Get(path string) (interface{}, bool) {
 
 type LenEqual int
 
+type NotSet struct{}
+
+type Array[T any] []T
+
+func (aa Array[T]) toJSONArray() []interface{} {
+	out := make([]interface{}, len(aa))
+	for idx, val := range aa {
+		out[idx] = val
+	}
+	return out
+}
+
+type isArray interface {
+	toJSONArray() []interface{}
+}
+
 func (d *Asserter) AssertEqual(t TB, path string, value interface{}) {
 	t.Helper()
+	if _, ok := value.(NotSet); ok {
+		_, ok := d.Get(path)
+		if ok {
+			t.Errorf("path %q was set", path)
+		}
+		return
+	}
 	actual, ok := d.Get(path)
 	if !ok {
 		t.Errorf("path %q not found", path)
 		return
 	}
 
-	switch value.(type) {
+	switch value := value.(type) {
 	case LenEqual:
 		actualSlice, ok := actual.([]interface{})
 		if ok {
-			if len(actualSlice) != int(value.(LenEqual)) {
+			if len(actualSlice) != int(value) {
 				t.Errorf("expected %d, got %d", value, len(actualSlice))
 			}
 			return
 		}
 		actualMap, ok := actual.(map[string]interface{})
 		if ok {
-			if len(actualMap) != int(value.(LenEqual)) {
+			if len(actualMap) != int(value) {
 				t.Errorf("expected %d, got %d", value, len(actualMap))
 			}
 			return
 		}
 		t.Errorf("expected len(%d), got non len object %T", value, actual)
+	case isArray:
+		wantVal := value.toJSONArray()
+		assert.EqualValues(t, wantVal, actual, "array at path %q", path)
+
 	default:
 		assert.EqualValues(t, value, actual, "at path %q", path)
 	}
