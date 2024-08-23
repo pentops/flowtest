@@ -107,6 +107,8 @@ type LenEqual int
 
 type NotSet struct{}
 
+type IsOneofKey string
+
 type Array[T any] []T
 
 func (aa Array[T]) toJSONArray() []interface{} {
@@ -130,6 +132,29 @@ func (d *Asserter) AssertEqual(t TB, path string, value interface{}) {
 		}
 		return
 	}
+	if _, ok := value.(IsOneofKey); ok {
+		atPath, ok := d.Get(path)
+		if !ok {
+			t.Errorf("path %q not found", path)
+		}
+		pathObj, ok := atPath.(map[string]interface{})
+		if !ok {
+			t.Errorf("path %q invalid for oneof", path)
+		}
+		keys := make([]string, 0)
+		for k := range pathObj {
+			keys = append(keys, k)
+		}
+		if len(keys) == 0 {
+			t.Errorf("no key found at path %q", path)
+		} else if len(keys) > 1 {
+			t.Errorf("multiple keys found at path %q: %v", path, keys)
+		} else if keys[0] != string(value.(IsOneofKey)) {
+			t.Errorf("expected key %q, got %q", value, keys[0])
+		}
+		return
+	}
+
 	actual, ok := d.Get(path)
 	if !ok {
 		t.Errorf("path %q not found", path)
