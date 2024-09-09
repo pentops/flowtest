@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Assertion interface {
@@ -21,6 +22,9 @@ type Assertion interface {
 
 	// NoError asserts that the error is nil, and fails the test if not
 	NoError(err error)
+
+	// MustMessage is used to assert topic requests work
+	MustMessage(*emptypb.Empty, error)
 
 	// Equal asserts that want == got. If extraLog is set, and the first
 	// argument is a string it is used as a format string for the rest of the
@@ -97,6 +101,12 @@ func (a *assertion) NoError(err error) {
 			a.fail("got error %s (%T), want no error", err, err)
 		}
 	}
+}
+
+func (a *assertion) MustMessage(m *emptypb.Empty, err error) {
+	a.helper()
+	a.NoError(err)
+	a.NotNil(m)
 }
 
 func (a *assertion) Equal(want, got interface{}) {
