@@ -45,6 +45,9 @@ type Assertion interface {
 	// thing.field.subfield)
 	NotNil(gots ...interface{})
 
+	// Nil asserts that the given values are nil
+	Nil(gots ...interface{})
+
 	// Fatal fails the test with the given message
 	Fatal(args ...interface{})
 
