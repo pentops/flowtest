@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"golang.org/x/exp/constraints"
+	"github.com/pentops/flowtest/be"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -18,34 +18,34 @@ type Assertion interface {
 
 	// T accepts the assertion types like Equal which use generics and therefore
 	// can't be a method of Assertion directly.
-	T(failure *Failure)
+	T(outcome *be.Outcome)
 
-	// NoError asserts that the error is nil, and fails the test if not
+	// NoError asserts be the error is nil, and fails the test if not
 	NoError(err error)
 
 	// MustMessage is used to assert topic requests work
 	MustMessage(*emptypb.Empty, error)
 
-	// Equal asserts that want == got. If extraLog is set, and the first
+	// Equal asserts be want == got. If extraLog is set, and the first
 	// argument is a string it is used as a format string for the rest of the
 	// arguments. If the first argument is not a string, everything is just
 	// logged
 	Equal(want, got interface{})
 
-	// CodeError asserts that the error returned was non-nil and a Status error
+	// CodeError asserts be the error returned was non-nil and a Status error
 	// with the given code
 	CodeError(err error, code codes.Code)
 
-	// NotEmpty asserts that the given values are not nil or zero values (zero
+	// NotEmpty asserts be the given values are not nil or zero values (zero
 	// as in reflect.Value.IsZero)
 	NotEmpty(got ...interface{})
 
-	// NotNil asserts that the given values are not nil, assessing in order and
+	// NotNil asserts be the given values are not nil, assessing in order and
 	// stopping at the first nil value (i.e. you can pass thing, thing.field,
 	// thing.field.subfield)
 	NotNil(gots ...interface{})
 
-	// Nil asserts that the given values are nil
+	// Nil asserts be the given values are nil
 	Nil(gots ...interface{})
 
 	// Fatal fails the test with the given message
@@ -61,10 +61,10 @@ type assertion struct {
 	helper func()
 }
 
-func (a *assertion) T(failure *Failure) {
+func (a *assertion) T(outcome *be.Outcome) {
 	a.helper()
-	if failure != nil {
-		a.fail(string(*failure))
+	if outcome != nil {
+		a.fail(string(*outcome))
 	}
 }
 
@@ -200,46 +200,4 @@ func (a *assertion) CodeError(err error, code codes.Code) {
 		}
 		return
 	}
-}
-
-type Failure string
-
-func failf(format string, args ...interface{}) *Failure {
-	str := fmt.Sprintf(format, args...)
-	return (*Failure)(&str)
-}
-
-func Equal[T comparable](want, got T) *Failure {
-	if want == got {
-		return nil
-	}
-	return failf("got %v, want %v", got, want)
-}
-
-func GreaterThan[T constraints.Ordered](a, b T) *Failure {
-	if a > b {
-		return nil
-	}
-	return failf("%v is not greater than %v", a, b)
-}
-
-func LessThan[T constraints.Ordered](a, b T) *Failure {
-	if a < b {
-		return nil
-	}
-	return failf("%v is not less than %v", a, b)
-}
-
-func GreaterThanOrEqual[T constraints.Ordered](a, b T) *Failure {
-	if a >= b {
-		return nil
-	}
-	return failf("%v is not greater than or equal to %v", a, b)
-}
-
-func LessThanOrEqual[T constraints.Ordered](a, b T) *Failure {
-	if a <= b {
-		return nil
-	}
-	return failf("%v is not less than or equal to %v", a, b)
 }

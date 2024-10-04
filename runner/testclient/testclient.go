@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/pentops/flowtest"
+	"github.com/pentops/flowtest/be"
 )
 
 type RequestLog struct {
@@ -182,12 +182,12 @@ func (e *APIError) Error() string {
 	return http.StatusText(e.StatusCode)
 }
 
-func failf(format string, args ...interface{}) *flowtest.Failure {
-	fs := flowtest.Failure(fmt.Sprintf(format, args...))
+func failf(format string, args ...interface{}) *be.Outcome {
+	fs := be.Outcome(fmt.Sprintf(format, args...))
 	return &fs
 }
 
-func AssertHTTPError(err error, code int) *flowtest.Failure {
+func AssertHTTPError(err error, code int) *be.Outcome {
 	if err == nil {
 		return failf("expected HTTP error %d, got nil", code)
 	}

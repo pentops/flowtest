@@ -12,6 +12,14 @@ type Asserter interface {
 	Assertion
 }
 
+type Logger interface {
+	Log(args ...any)
+}
+
+type shiftingLogger struct {
+	Logger
+}
+
 type step struct {
 	desc     string
 	asserter *stepRun
@@ -31,6 +39,14 @@ type Stepper[T RequiresTB] struct {
 	preStepHooks      []callbackErr
 	preVariationHooks []callbackErr
 	postStepHooks     []callbackErr
+
+	shiftingLogger *shiftingLogger
+}
+
+func NewStepper[T RequiresTB](name string) *Stepper[T] {
+	return &Stepper[T]{
+		name: name,
+	}
 }
 
 // Setup steps run at the start of each RunSteps call, or the start of each
@@ -41,19 +57,51 @@ func (ss *Stepper[T]) Setup(fn callbackErr) {
 }
 
 // PreStepHook runs before every step, after any variations.
-func (ss *Stepper[T]) PreStepHook(fn func(context.Context, Asserter) error) {
+func (ss *Stepper[T]) PreStepHook(fn callbackErr) {
 	ss.preStepHooks = append(ss.preStepHooks, fn)
 }
 
 // PreVariationHook runs before every Variation, before any steps.
-func (ss *Stepper[T]) PreVariationHook(fn func(context.Context, Asserter) error) {
+func (ss *Stepper[T]) PreVariationHook(fn callbackErr) {
 	ss.preVariationHooks = append(ss.preVariationHooks, fn)
 }
 
 // PostStepHook runs after every step.
-func (ss *Stepper[T]) PostStepHook(fn func(context.Context, Asserter) error) {
+func (ss *Stepper[T]) PostStepHook(fn callbackErr) {
 	ss.postStepHooks = append(ss.postStepHooks, fn)
 }
+
+// Step registers a function to make assertions on the running code, this is the
+// main assertion set.
+func (ss *Stepper[_]) Step(desc string, fn callback) {
+	ss.steps = append(ss.steps, &step{
+		desc: desc,
+		fn:   fn,
+	})
+}
+
+// Adds a variation to the stepper. Each Variation causes the Setup hooks,
+// followed by the Variation, then every registered Step (and hooks), allowing
+// one call to RunSteps to run multiple variations of the same test.
+func (ss *Stepper[_]) Variation(desc string, fn callback) {
+	ss.variations = append(ss.variations, &step{
+		desc: desc,
+		fn:   fn,
+	})
+}
+
+// FollowAsserter returns an asserter which always points to the current test.
+// It is valid only as long as the stepper is valid.
+func (ss *Stepper[T]) ShiftingLogger() Logger {
+	if ss.shiftingLogger == nil {
+		ss.shiftingLogger = &shiftingLogger{
+			Logger: ss,
+		}
+	}
+	return ss.shiftingLogger
+}
+
+var _ StepSetter = &Stepper[RequiresTB]{}
 
 // StepSetter is a minimal interface to configure the steps and hooks for a test.
 type StepSetter interface {
@@ -63,22 +111,22 @@ type StepSetter interface {
 	Setup(fn callbackErr)
 
 	// PreStepHook runs before every step, after any variations.
-	PreStepHook(fn func(context.Context, Asserter) error)
+	PreStepHook(fn callbackErr)
 
 	// PreVariationHook runs before every Variation, before any steps.
-	PreVariationHook(fn func(context.Context, Asserter) error)
+	PreVariationHook(fn callbackErr)
 
 	// PostStepHook runs after every step.
-	PostStepHook(fn func(context.Context, Asserter) error)
+	PostStepHook(fn callbackErr)
 
 	// Step registers a function to make assertions on the running code, this is the
 	// main assertion set.
-	Step(desc string, fn func(context.Context, Asserter))
+	Step(desc string, fn callback)
 
 	// Adds a variation to the stepper. Each Variation causes the Setup hooks,
 	// followed by the Variation, then every registered Step (and hooks), allowing
 	// one call to RunSteps to run multiple variations of the same test.
-	Variation(desc string, fn func(context.Context, Asserter))
+	Variation(desc string, fn callback)
 
 	// LevelLog implements a global logger compatible with pentops/log.go/log.
 	// Log lines will be captured into the currently running test step.
@@ -164,34 +212,9 @@ func (ss *Stepper[T]) LogQuery(ctx context.Context, statement string, params ...
 	ss.Log(strings.Join(lines, "\n"))
 }
 
-func NewStepper[T RequiresTB](name string) *Stepper[T] {
-	return &Stepper[T]{
-		name: name,
-	}
-}
-
-// Step registers a function to make assertions on the running code, this is the
-// main assertion set.
-func (ss *Stepper[_]) Step(desc string, fn func(context.Context, Asserter)) {
-	ss.steps = append(ss.steps, &step{
-		desc: desc,
-		fn:   fn,
-	})
-}
-
-// Adds a variation to the stepper. Each Variation causes the Setup hooks,
-// followed by the Variation, then every registered Step (and hooks), allowing
-// one call to RunSteps to run multiple variations of the same test.
-func (ss *Stepper[_]) Variation(desc string, fn func(context.Context, Asserter)) {
-	ss.variations = append(ss.variations, &step{
-		desc: desc,
-		fn:   fn,
-	})
-}
-
 // RunSteps is the main entry point of the stepper. For each Variation, or just
 // once if no variation is registered, the Setup hooks are run, followed by the
-// Variation, then every registered Step with pre and post hoooks.
+// Variation, then every registered Step with pre and post hooks.
 func (ss *Stepper[T]) RunSteps(t RunnableTB[T]) {
 	ctx := context.Background()
 	t.Helper()
@@ -228,6 +251,16 @@ func (ss *Stepper[T]) RunStepsWithContext(ctx context.Context, t RunnableTB[T]) 
 	}
 }
 
+func (ss *Stepper[T]) buildAsserter(t RequiresTB, cancel func()) *stepRun {
+	asserter := &stepRun{
+		RequiresTB: t,
+		cancel:     cancel,
+	}
+	asserter.assertion = asserter.anon()
+	ss.asserter = asserter
+	return asserter
+}
+
 func (ss *Stepper[T]) runVariation(ctx context.Context, t RunnableTB[T], variationIdx int, variation *step) bool {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -254,12 +287,7 @@ func (ss *Stepper[T]) runHooks(ctx context.Context, cancel func(), t RunnableTB[
 	if len(fns) == 0 {
 		return nil
 	}
-	asserter := &stepRun{
-		cancel:     cancel,
-		RequiresTB: t,
-	}
-	asserter.assertion = asserter.anon()
-	ss.asserter = asserter
+	asserter := ss.buildAsserter(t, cancel)
 	for _, fn := range fns {
 		if err := fn(ctx, asserter); err != nil {
 			return err
@@ -279,12 +307,8 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 	actuallyDidRun := false
 	success := t.Run(name, func(t T) {
 		actuallyDidRun = true
-		asserter := &stepRun{
-			cancel:     cancel,
-			RequiresTB: t,
-		}
-		asserter.assertion = asserter.anon()
-		ss.asserter = asserter
+
+		asserter := ss.buildAsserter(t, cancel)
 		step.asserter = asserter
 
 		for _, hook := range preHooks {

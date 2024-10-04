@@ -18,49 +18,6 @@ func (t *testWrap) Fatal(args ...interface{}) {
 	t.message = fmt.Sprint(args...)
 }
 
-func TestHappyFailFuncs(t *testing.T) {
-
-	for _, tc := range []*Failure{
-		Equal(1, 1),
-		Equal(1, int(1)),
-		Equal(int32(1), 1),
-		Equal("a", "a"),
-		GreaterThan(2, 1),
-		GreaterThan("b", "a"),
-		LessThan(1, 2),
-	} {
-		tw := &testWrap{}
-		a := &assertion{
-			fatal:  tw.Fatal,
-			helper: tw.Helper,
-		}
-		a.T(tc)
-		if tw.failed {
-			t.Errorf("failed: %s", tw.message)
-		}
-	}
-
-}
-func TestSadFailFuncs(t *testing.T) {
-	for _, tc := range []*Failure{
-		Equal(1, 2),
-		Equal(1, int(2)),
-		Equal(int32(1), 2),
-		Equal("a", "2"),
-	} {
-		tw := &testWrap{}
-		a := &assertion{
-			fatal:  tw.Fatal,
-			helper: tw.Helper,
-		}
-		a.T(tc)
-		if !tw.failed {
-			t.Errorf("expected failure, but got none")
-		}
-	}
-
-}
-
 func TestEquals(t *testing.T) {
 
 	for _, tc := range []struct {
