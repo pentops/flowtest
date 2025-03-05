@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -13,7 +12,7 @@ import (
 func NewGRPCPair(t TB, middleware ...grpc.UnaryServerInterceptor) *GRPCPair {
 	lis := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(middleware...)),
+		grpc.ChainUnaryInterceptor(middleware...),
 	)
 
 	conn, err := grpc.NewClient("127.0.0.1",
