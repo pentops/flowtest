@@ -6,7 +6,6 @@ require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.5-20250219170025-d39267d9df8f.1
 	github.com/fatih/color v1.18.0
 	github.com/google/go-cmp v0.7.0
-	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.0
 	github.com/jhump/protoreflect v1.17.0
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/gjson v1.18.0
