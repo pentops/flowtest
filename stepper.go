@@ -2,6 +2,7 @@ package flowtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -36,6 +37,7 @@ type Stepper[T RequiresTB] struct {
 	name       string
 
 	setup             []callbackErr
+	backgroundHooks   []callbackErr
 	preStepHooks      []callbackErr
 	preVariationHooks []callbackErr
 	postStepHooks     []callbackErr
@@ -54,6 +56,14 @@ func NewStepper[T RequiresTB](name string) *Stepper[T] {
 // are completed, or after any fatal error.
 func (ss *Stepper[T]) Setup(fn callbackErr) {
 	ss.setup = append(ss.setup, fn)
+}
+
+// BackgroundHook runs at the start and end of each RunSteps call, or the start of each
+// Variation. The context passed to the setup will be canceled after all steps
+// are completed, or after any fatal error.
+// The hook need not return until the context is canceled.
+func (ss *Stepper[T]) Background(fn callbackErr) {
+	ss.backgroundHooks = append(ss.backgroundHooks, fn)
 }
 
 // PreStepHook runs before every step, after any variations.
@@ -243,11 +253,28 @@ func (ss *Stepper[T]) RunStepsWithContext(ctx context.Context, t RunnableTB[T]) 
 		t.FailNow()
 	}
 
+	backgroundCtx, backgroundCancel := context.WithCancel(ctx)
+	defer backgroundCancel()
+	chBackgroundErr := make(chan error)
+	go func() {
+		err := ss.runHooks(backgroundCtx, cancel, t, ss.backgroundHooks...)
+		chBackgroundErr <- err
+	}()
+
 	for idx, step := range ss.steps {
 		success := ss.runStep(ctx, t, fmt.Sprintf("%d %s", idx, step.desc), step, ss.preStepHooks, ss.postStepHooks)
 		if !success {
 			return
 		}
+	}
+
+	backgroundCancel()
+	if err := <-chBackgroundErr; err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		t.Log("Background hook failed", err)
+		t.FailNow()
 	}
 }
 
