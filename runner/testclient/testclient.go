@@ -80,25 +80,14 @@ func (api *API) Request(ctx context.Context, method string, path string, body in
 				return fmt.Errorf("marshalling request: %w", err)
 			}
 			bodyReader = bytes.NewReader(bodyBytes)
-		case http.MethodGet, http.MethodDelete:
-
-			qs, ok := body.(interface {
-				QueryParameters() (url.Values, error)
-			})
-			if ok {
-				query, err := qs.QueryParameters()
-				if err != nil {
-					return fmt.Errorf("getting query: %w", err)
-				}
-				path = fmt.Sprintf("%s?%s", path, query.Encode())
-			}
-
+		default:
+			return fmt.Errorf("unsupported method %s with body", method)
 		}
 	}
 
-	baseURL := api.BaseURL
-
-	req, err := http.NewRequest(method, baseURL+path, bodyReader)
+	fullURL := api.BaseURL + path
+	fmt.Printf("Full URL %s\n", fullURL)
+	req, err := http.NewRequest(method, fullURL, bodyReader)
 	if err != nil {
 		return err
 	}
