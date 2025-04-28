@@ -9,9 +9,9 @@ import (
 )
 
 func TestGrpcPair(t *testing.T) {
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	pair := NewGRPCPair(t)
 	pair.ServeUntilDone(t, ctx)
 
@@ -22,8 +22,8 @@ func TestGrpcPair(t *testing.T) {
 	// Test reflection
 	resp, err := reflectionClient.ServerReflectionInfo(ctx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reflection: %v", err.Error())
 	}
-	t.Logf("resp: %v", resp)
 
+	t.Logf("resp: %v", resp)
 }
