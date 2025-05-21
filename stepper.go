@@ -471,7 +471,7 @@ func (t *stepRun) FailNow() {
 func (t *stepRun) Error(args ...interface{}) {
 	t.Helper()
 	t.log("ERROR", args...)
-	t.RequiresTB.Fail()
+	t.Fail()
 	t.failed = true
 }
 
