@@ -13,7 +13,7 @@ type testWrap struct {
 func (t *testWrap) Helper() {
 }
 
-func (t *testWrap) Fatal(args ...interface{}) {
+func (t *testWrap) Fatal(args ...any) {
 	t.failed = true
 	t.message = fmt.Sprint(args...)
 }
@@ -21,8 +21,8 @@ func (t *testWrap) Fatal(args ...interface{}) {
 func TestEquals(t *testing.T) {
 
 	for _, tc := range []struct {
-		A     interface{}
-		B     interface{}
+		A     any
+		B     any
 		Equal bool
 	}{
 		{A: "foo", B: "foo", Equal: true},
@@ -56,7 +56,7 @@ func TestEquals(t *testing.T) {
 func TestNotNilHappy(t *testing.T) {
 
 	type testStruct struct{}
-	notNilVals := []interface{}{
+	notNilVals := []any{
 		"foo",
 		1,
 		0,
@@ -77,12 +77,12 @@ func TestNotNilHappy(t *testing.T) {
 		})
 	}
 
-	nilVals := []func() interface{}{
-		func() interface{} { return nil },
-		func() interface{} { var a *string; return a },
-		func() interface{} { var a *[]byte; return a },
-		func() interface{} { var a *struct{}; return a },
-		func() interface{} { var a *testStruct; return a },
+	nilVals := []func() any{
+		func() any { return nil },
+		func() any { var a *string; return a },
+		func() any { var a *[]byte; return a },
+		func() any { var a *struct{}; return a },
+		func() any { var a *testStruct; return a },
 	}
 
 	for idx, valFunc := range nilVals {

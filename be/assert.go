@@ -8,7 +8,7 @@ import (
 
 type Outcome string
 
-func failf(format string, args ...interface{}) *Outcome {
+func failf(format string, args ...any) *Outcome {
 	str := fmt.Sprintf(format, args...)
 	return (*Outcome)(&str)
 }

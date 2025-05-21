@@ -17,9 +17,9 @@ type RequestLog struct {
 	Method         string
 	Path           string
 	ResponseStatus int
-	RequestBody    interface{}
+	RequestBody    any
 	RequestHeaders http.Header
-	ResponseBody   interface{}
+	ResponseBody   any
 	ResponseHeader http.Header
 	Error          error
 }
@@ -62,7 +62,7 @@ func NewAPI(baseURL string) (*API, error) {
 	return api, nil
 }
 
-func (api *API) Request(ctx context.Context, method string, path string, body interface{}, response interface{}) error {
+func (api *API) Request(ctx context.Context, method string, path string, body any, response any) error {
 
 	logEntry := &RequestLog{
 		Method:      method,
@@ -171,7 +171,7 @@ func (e *APIError) Error() string {
 	return http.StatusText(e.StatusCode)
 }
 
-func failf(format string, args ...interface{}) *be.Outcome {
+func failf(format string, args ...any) *be.Outcome {
 	fs := be.Outcome(fmt.Sprintf(format, args...))
 	return &fs
 }

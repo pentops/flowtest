@@ -145,10 +145,10 @@ type StepSetter interface {
 
 	// Log logs any object, it can be used within test callbacks.
 	// Log lines will be captured into the currently running test step.
-	Log(...interface{})
+	Log(...any)
 }
 
-func (ss *Stepper[T]) Log(args ...interface{}) {
+func (ss *Stepper[T]) Log(args ...any) {
 	if ss.asserter == nil {
 		fmt.Printf("WARNING: Log called on stepper without a current step. %s", fmt.Sprint(args...))
 		return
@@ -186,7 +186,7 @@ func (ss *Stepper[T]) LevelLog(level, message string, fields []slog.Attr) {
 
 const maxStackLen = 50
 
-func (ss *Stepper[T]) LogQuery(ctx context.Context, statement string, params ...interface{}) {
+func (ss *Stepper[T]) LogQuery(ctx context.Context, statement string, params ...any) {
 	if ss.asserter != nil {
 		ss.asserter.helper()
 	}
@@ -392,7 +392,7 @@ type TB interface {
 
 type RequiresTB interface {
 	Helper()
-	Log(args ...interface{})
+	Log(args ...any)
 	FailNow()
 	Fail()
 }
@@ -415,7 +415,7 @@ func (t *stepRun) Failed() bool {
 	return t.failed
 }
 
-func (t *stepRun) log(level LogLevel, args ...interface{}) {
+func (t *stepRun) log(level LogLevel, args ...any) {
 	t.Helper()
 	if levelLogger, ok := t.RequiresTB.(levelLogger); ok {
 		levelLogger.LevelLog(level, args...)
@@ -428,12 +428,12 @@ func (t *stepRun) log(level LogLevel, args ...interface{}) {
 	}
 }
 
-func (t *stepRun) Log(args ...interface{}) {
+func (t *stepRun) Log(args ...any) {
 	t.Helper()
 	t.log(LogLevelDefault, args...)
 }
 
-func (t *stepRun) Logf(format string, args ...interface{}) {
+func (t *stepRun) Logf(format string, args ...any) {
 	t.Helper()
 	t.log(LogLevelDefault, fmt.Sprintf(format, args...))
 }
@@ -447,16 +447,16 @@ const (
 )
 
 type levelLogger interface {
-	LevelLog(level LogLevel, args ...interface{})
+	LevelLog(level LogLevel, args ...any)
 }
 
-func (t *stepRun) Fatal(args ...interface{}) {
+func (t *stepRun) Fatal(args ...any) {
 	t.Helper()
 	t.log(LogLevelFatal, fmt.Sprint(args...))
 	t.FailNow()
 }
 
-func (t *stepRun) Fatalf(format string, args ...interface{}) {
+func (t *stepRun) Fatalf(format string, args ...any) {
 	t.Helper()
 	t.Fatal(fmt.Sprintf(format, args...))
 }
@@ -468,14 +468,14 @@ func (t *stepRun) FailNow() {
 	t.RequiresTB.FailNow()
 }
 
-func (t *stepRun) Error(args ...interface{}) {
+func (t *stepRun) Error(args ...any) {
 	t.Helper()
 	t.log("ERROR", args...)
 	t.Fail()
 	t.failed = true
 }
 
-func (t *stepRun) Errorf(format string, args ...interface{}) {
+func (t *stepRun) Errorf(format string, args ...any) {
 	t.Helper()
 	t.Error(fmt.Sprintf(format, args...))
 	t.failed = true

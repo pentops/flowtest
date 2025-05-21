@@ -8,6 +8,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/pentops/flowtest"
+	"slices"
 )
 
 type TestCallback func(flowtest.StepSetter)
@@ -25,11 +26,8 @@ func (t *Test) CategoriesMatch(filter map[string][]string) bool {
 	for filterKey, filterValues := range filter {
 		matched := false
 		for _, filterValue := range filterValues {
-			for _, tag := range t.CategoryTags[filterKey] {
-				if tag == filterValue {
-					matched = true
-					break
-				}
+			if slices.Contains(t.CategoryTags[filterKey], filterValue) {
+				matched = true
 			}
 		}
 		if !matched {
@@ -42,13 +40,7 @@ func (t *Test) CategoriesMatch(filter map[string][]string) bool {
 
 func (t *Test) TagsMatch(filter []string) bool {
 	for _, filterTag := range filter {
-		matched := false
-		for _, tag := range t.Tags {
-			if tag == filterTag {
-				matched = true
-				break
-			}
-		}
+		matched := slices.Contains(t.Tags, filterTag)
 		if !matched {
 			return false
 		}

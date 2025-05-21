@@ -233,7 +233,7 @@ func WithMessageImports(imports ...string) MessageOption {
 	}
 }
 
-func SingleMessage(t testing.TB, content ...interface{}) protoreflect.MessageDescriptor {
+func SingleMessage(t testing.TB, content ...any) protoreflect.MessageDescriptor {
 	t.Helper()
 	options := &messageOption{
 		name: "Wrapper",

@@ -10,11 +10,12 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"slices"
 )
 
 type Assertion interface {
 	// Sub creates a named sub-assertion
-	Sub(name string, args ...interface{}) Assertion
+	Sub(name string, args ...any) Assertion
 
 	// T accepts the assertion types like Equal which use generics and therefore
 	// can't be a method of Assertion directly.
@@ -30,7 +31,7 @@ type Assertion interface {
 	// argument is a string it is used as a format string for the rest of the
 	// arguments. If the first argument is not a string, everything is just
 	// logged
-	Equal(want, got interface{})
+	Equal(want, got any)
 
 	// CodeError asserts be the error returned was non-nil and a Status error
 	// with the given code
@@ -38,26 +39,26 @@ type Assertion interface {
 
 	// NotEmpty asserts be the given values are not nil or zero values (zero
 	// as in reflect.Value.IsZero)
-	NotEmpty(got ...interface{})
+	NotEmpty(got ...any)
 
 	// NotNil asserts be the given values are not nil, assessing in order and
 	// stopping at the first nil value (i.e. you can pass thing, thing.field,
 	// thing.field.subfield)
-	NotNil(gots ...interface{})
+	NotNil(gots ...any)
 
 	// Nil asserts be the given values are nil
-	Nil(gots ...interface{})
+	Nil(gots ...any)
 
 	// Fatal fails the test with the given message
-	Fatal(args ...interface{})
+	Fatal(args ...any)
 
 	// Fatalf fails the test with the given format string
-	Fatalf(format string, args ...interface{})
+	Fatalf(format string, args ...any)
 }
 
 type assertion struct {
 	name   string
-	fatal  func(args ...interface{})
+	fatal  func(args ...any)
 	helper func()
 }
 
@@ -68,7 +69,7 @@ func (a *assertion) T(outcome *be.Outcome) {
 	}
 }
 
-func (a *assertion) Sub(name string, args ...interface{}) Assertion {
+func (a *assertion) Sub(name string, args ...any) Assertion {
 	return &assertion{
 		name:   fmt.Sprintf(name, args...),
 		helper: a.helper,
@@ -76,7 +77,7 @@ func (a *assertion) Sub(name string, args ...interface{}) Assertion {
 	}
 }
 
-func (a *assertion) fail(format string, args ...interface{}) {
+func (a *assertion) fail(format string, args ...any) {
 	a.helper()
 	if a.name != "" {
 		format = fmt.Sprintf("%s: %s", a.name, format)
@@ -84,12 +85,12 @@ func (a *assertion) fail(format string, args ...interface{}) {
 	a.fatal(fmt.Sprintf(format, args...))
 }
 
-func (a *assertion) Fatal(args ...interface{}) {
+func (a *assertion) Fatal(args ...any) {
 	a.helper()
 	a.fail(fmt.Sprint(args...))
 }
 
-func (a *assertion) Fatalf(format string, args ...interface{}) {
+func (a *assertion) Fatalf(format string, args ...any) {
 	a.helper()
 	a.fail(format, args...)
 }
@@ -112,7 +113,7 @@ func (a *assertion) MustMessage(m *emptypb.Empty, err error) {
 	a.NotNil(m)
 }
 
-func (a *assertion) Equal(want, got interface{}) {
+func (a *assertion) Equal(want, got any) {
 	a.helper()
 	if got == nil || want == nil {
 		if got != want {
@@ -139,7 +140,7 @@ func (a *assertion) Equal(want, got interface{}) {
 
 }
 
-func (a *assertion) NotEmpty(gots ...interface{}) {
+func (a *assertion) NotEmpty(gots ...any) {
 	a.helper()
 	for _, got := range gots {
 		if got == nil {
@@ -155,7 +156,7 @@ func (a *assertion) NotEmpty(gots ...interface{}) {
 
 }
 
-func isNil(got interface{}) bool {
+func isNil(got any) bool {
 	if got == nil {
 		return true
 	}
@@ -166,17 +167,15 @@ func isNil(got interface{}) bool {
 	return rv.IsNil()
 }
 
-func (a *assertion) NotNil(gots ...interface{}) {
+func (a *assertion) NotNil(gots ...any) {
 	a.helper()
-	for _, got := range gots {
-		if isNil(got) {
-			a.fail("value was nil")
-			return
-		}
+	if slices.ContainsFunc(gots, isNil) {
+		a.fail("value was nil")
+		return
 	}
 }
 
-func (a *assertion) Nil(gots ...interface{}) {
+func (a *assertion) Nil(gots ...any) {
 	a.helper()
 	for _, got := range gots {
 		if !isNil(got) {

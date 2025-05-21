@@ -16,7 +16,7 @@ func TestStepperStops(t *testing.T) {
 	})
 
 	ss.Step("throw", func(ctx context.Context, a Asserter) {
-		a.Log("step 1 ", map[string]interface{}{"foo": "bar"})
+		a.Log("step 1 ", map[string]any{"foo": "bar"})
 		a.Equal(true, true)
 		a.Fatal("Test Fatal")
 	})
