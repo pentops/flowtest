@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"strings"
 )
@@ -140,7 +141,7 @@ type StepSetter interface {
 
 	// LevelLog implements a global logger compatible with pentops/log.go/log.
 	// Log lines will be captured into the currently running test step.
-	LevelLog(level, message string, fields map[string]interface{})
+	LevelLog(level, message string, attrs []slog.Attr)
 
 	// Log logs any object, it can be used within test callbacks.
 	// Log lines will be captured into the currently running test step.
@@ -159,14 +160,16 @@ func (ss *Stepper[T]) Log(args ...interface{}) {
 // LevelLog implements a global logger compatible with pentops/log.go/log
 // DefaultLogger, and others, to capture log lines from within the handlers
 // into the test output
-func (ss *Stepper[T]) LevelLog(level, message string, fields map[string]interface{}) {
+func (ss *Stepper[T]) LevelLog(level, message string, fields []slog.Attr) {
 	if ss.asserter != nil {
 		ss.asserter.helper()
 	}
 
 	fieldStrings := make([]string, 0, len(fields)+1)
 	fieldStrings = append(fieldStrings, fmt.Sprintf("%s: %s", level, message))
-	for k, v := range fields {
+	for _, entry := range fields {
+		k := entry.Key
+		v := entry.Value.Any()
 		if stackLines, ok := v.([]string); ok && k == "stack" {
 			fieldStrings = append(fieldStrings, stackLines...)
 			continue
