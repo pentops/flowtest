@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,7 +15,8 @@ import (
 )
 
 type TBImpl struct {
-	failed bool
+	failed  bool
+	context context.Context
 }
 
 func (t *TBImpl) Helper() {}
@@ -43,6 +45,10 @@ func (t *TBImpl) LevelLog(level flowtest.LogLevel, args ...any) {
 		}
 	}
 	fmt.Println(args...)
+}
+
+func (t *TBImpl) Context() context.Context {
+	return t.context
 }
 
 func (t *TBImpl) Log(args ...any) {

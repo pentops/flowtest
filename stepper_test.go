@@ -5,6 +5,9 @@ import (
 	"testing"
 )
 
+// ensure that testing.T implements what the Asserter needs
+var _ RequiresTB = &testing.T{}
+
 func TestStepperStops(t *testing.T) {
 
 	t.Skip() // Too Meta

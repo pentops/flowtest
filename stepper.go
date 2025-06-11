@@ -281,10 +281,11 @@ func (ss *Stepper[T]) RunStepsWithContext(ctx context.Context, t RunnableTB[T]) 
 	}
 }
 
-func (ss *Stepper[T]) buildAsserter(t RequiresTB, cancel func()) *stepRun {
+func (ss *Stepper[T]) buildAsserter(ctx context.Context, t RequiresTB, cancel func()) *stepRun {
 	asserter := &stepRun{
 		RequiresTB: t,
 		cancel:     cancel,
+		context:    ctx,
 	}
 	asserter.assertion = asserter.anon()
 	ss.asserter = asserter
@@ -317,7 +318,7 @@ func (ss *Stepper[T]) runHooks(ctx context.Context, cancel func(), t RunnableTB[
 	if len(fns) == 0 {
 		return nil
 	}
-	asserter := ss.buildAsserter(t, cancel)
+	asserter := ss.buildAsserter(ctx, t, cancel)
 	for _, fn := range fns {
 		if err := fn(ctx, asserter); err != nil {
 			return err
@@ -338,7 +339,7 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 	success := t.Run(name, func(t T) {
 		actuallyDidRun = true
 
-		asserter := ss.buildAsserter(t, cancel)
+		asserter := ss.buildAsserter(ctx, t, cancel)
 		step.asserter = asserter
 
 		for _, hook := range preHooks {
@@ -370,6 +371,7 @@ func (ss *Stepper[T]) runStep(ctx context.Context, t RunnableTB[T], name string,
 // TB is the subset of the testing.TB interface which the stepper's asserter
 // implements.
 type TB interface {
+	Context() context.Context
 	//Cleanup(func())
 	Error(args ...any)
 	Errorf(format string, args ...any)
@@ -390,7 +392,10 @@ type TB interface {
 	//TempDir() string
 }
 
+// RequiresTB is the minimum requirement which the stepper needs from a
+// testing.TB implementation.
 type RequiresTB interface {
+	Context() context.Context
 	Helper()
 	Log(args ...any)
 	FailNow()
@@ -406,9 +411,14 @@ type RunnableTB[T RequiresTB] interface {
 
 type stepRun struct {
 	RequiresTB
-	failed bool
-	cancel func()
+	context context.Context
+	failed  bool
+	cancel  func()
 	*assertion
+}
+
+func (t *stepRun) Context() context.Context {
+	return t.context
 }
 
 func (t *stepRun) Failed() bool {

@@ -6,9 +6,10 @@ import (
 	"sort"
 	"strings"
 
+	"slices"
+
 	"github.com/fatih/color"
 	"github.com/pentops/flowtest"
-	"slices"
 )
 
 type TestCallback func(flowtest.StepSetter)
@@ -126,6 +127,9 @@ func (ts *TestSet) Run(ctx context.Context, filter []string) error {
 	red := color.New(color.FgRed).PrintfFunc()
 	green := color.New(color.FgGreen).PrintfFunc()
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	for _, test := range toRun {
 		test := test
 
@@ -133,14 +137,17 @@ func (ts *TestSet) Run(ctx context.Context, filter []string) error {
 		stepper := flowtest.NewStepper[*TBImpl](testLabel)
 
 		green("== %s == Running\n", testLabel)
-		tb := &TBImpl{}
+		tb := &TBImpl{
+			context: ctx,
+		}
 
 		test.Setup(stepper)
 
-		stepper.RunSteps(tb)
+		stepper.RunStepsWithContext(ctx, tb)
 		if tb.failed {
 			failures = append(failures, testLabel)
 			red("== Failed %s\n", testLabel)
+			cancel()
 		}
 		color.New(color.FgGreen).Printf("== Finished %s\n", testLabel)
 	}
