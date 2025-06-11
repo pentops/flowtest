@@ -8,6 +8,21 @@ import (
 
 type Outcome string
 
+type Failer interface {
+	Fatal(args ...any)
+}
+
+func (o *Outcome) Run(t Failer, msg string, args ...any) {
+	if o == nil {
+		return
+	}
+	if len(args) > 0 {
+		msg = fmt.Sprintf(msg, args...)
+	}
+	fullMsg := fmt.Sprintf("%s: %s", msg, *o)
+	t.Fatal(fullMsg)
+}
+
 func failf(format string, args ...any) *Outcome {
 	str := fmt.Sprintf(format, args...)
 	return (*Outcome)(&str)
