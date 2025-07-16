@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -236,7 +237,7 @@ func WithMessageImports(imports ...string) MessageOption {
 func SingleMessage(t testing.TB, content ...any) protoreflect.MessageDescriptor {
 	t.Helper()
 	options := &messageOption{
-		name: "Wrapper",
+		name: fmt.Sprintf("Msg%d", rand.Intn(1000)),
 	}
 	lines := make([]string, 0, len(content))
 	for _, c := range content {
