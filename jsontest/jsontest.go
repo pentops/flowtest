@@ -142,7 +142,13 @@ func (d *Asserter) AssertEqual(t TB, path string, value any) {
 			t.Errorf("path %q invalid for oneof", path)
 		}
 		keys := make([]string, 0)
+
 		for k := range pathObj {
+
+			if k == "!type" {
+				continue // skip type key
+
+			}
 			keys = append(keys, k)
 		}
 		if len(keys) == 0 {
