@@ -493,8 +493,10 @@ func (t *stepRun) Errorf(format string, args ...any) {
 
 func (t *stepRun) anon() *assertion {
 	return &assertion{
-		name:   "",
-		helper: t.Helper,
-		fatal:  t.Fatal,
+		name:            "",
+		helper:          t.Helper,
+		fatal:           t.Fatal,
+		error:           t.Error,
+		assertionParent: t,
 	}
 }

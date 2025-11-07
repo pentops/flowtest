@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"reflect"
 
+	"slices"
+
 	"github.com/pentops/flowtest/be"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"slices"
 )
 
 type Assertion interface {
@@ -54,12 +55,29 @@ type Assertion interface {
 
 	// Fatalf fails the test with the given format string
 	Fatalf(format string, args ...any)
+
+	// Error fails the test with the given message
+	Error(args ...any)
+
+	// Errorf fails the test with the given format string
+	Errorf(format string, args ...any)
+
+	Helper()
+}
+
+type assertionParent interface {
+	Helper()
+	Fatal(args ...any)
+	Error(args ...any)
 }
 
 type assertion struct {
 	name   string
 	fatal  func(args ...any)
+	error  func(args ...any)
 	helper func()
+
+	assertionParent
 }
 
 func (a *assertion) T(outcome *be.Outcome) {
@@ -71,9 +89,11 @@ func (a *assertion) T(outcome *be.Outcome) {
 
 func (a *assertion) Sub(name string, args ...any) Assertion {
 	return &assertion{
-		name:   fmt.Sprintf(name, args...),
-		helper: a.helper,
-		fatal:  a.fatal,
+		name:            fmt.Sprintf(name, args...),
+		helper:          a.helper,
+		fatal:           a.fatal,
+		error:           a.error,
+		assertionParent: a,
 	}
 }
 
@@ -93,6 +113,22 @@ func (a *assertion) Fatal(args ...any) {
 func (a *assertion) Fatalf(format string, args ...any) {
 	a.helper()
 	a.fail(format, args...)
+}
+
+func (a *assertion) Error(args ...any) {
+	a.helper()
+	if a.name != "" {
+		args = append([]any{a.name + ": "}, args...)
+	}
+	a.error(fmt.Sprint(args...))
+}
+
+func (a *assertion) Errorf(format string, args ...any) {
+	a.helper()
+	if a.name != "" {
+		format = fmt.Sprintf("%s: %s", a.name, format)
+	}
+	a.error(fmt.Sprintf(format, args...))
 }
 
 func (a *assertion) NoError(err error) {
@@ -161,7 +197,7 @@ func isNil(got any) bool {
 		return true
 	}
 	rv := reflect.ValueOf(got)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return false
 	}
 	return rv.IsNil()
