@@ -119,6 +119,28 @@ func TryDescriptorsFromSource(source map[string]string) (*ResultSet, error) {
 			svc := services.Get(i)
 			rs.services[svc.FullName()] = svc
 		}
+
+		enums := fd.Enums()
+		for i := 0; i < enums.Len(); i++ {
+			enum := enums.Get(i)
+			options := enum.Options().(*descriptorpb.EnumOptions)
+			if options != nil {
+				if err := setUninterpretedOptions(options, options.UninterpretedOption); err != nil {
+					return nil, fmt.Errorf("parsing options on %s: %w", enum.FullName(), err)
+				}
+			}
+
+			values := enum.Values()
+			for i := 0; i < values.Len(); i++ {
+				value := values.Get(i)
+				options := value.Options().(*descriptorpb.EnumValueOptions)
+				if options != nil {
+					if err := setUninterpretedOptions(options, options.UninterpretedOption); err != nil {
+						return nil, fmt.Errorf("parsing options on %s: %w", value.FullName(), err)
+					}
+				}
+			}
+		}
 	}
 
 	return rs, nil
