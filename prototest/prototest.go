@@ -224,6 +224,8 @@ func setOptionField(msg protoreflect.Message, path []*descriptorpb.Uninterpreted
 		srcText = fmt.Sprintf("-%d", *opt.NegativeIntValue)
 	} else if opt.PositiveIntValue != nil {
 		srcText = fmt.Sprintf("%d", *opt.PositiveIntValue)
+	} else if opt.StringValue != nil {
+		srcText = fmt.Sprintf("%q", string(opt.StringValue))
 	} else {
 		return fmt.Errorf("no identifier value for %s but the option is a scalar (%s)", fieldName, field.Kind())
 	}
